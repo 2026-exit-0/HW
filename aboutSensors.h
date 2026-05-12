@@ -22,8 +22,14 @@ float avgLux = 0;
 float avgWhite = 0;
 float avgALS = 0;
 
+// 유분 측정용
+float ambientLux = 0;      // 주변광 (LED 끈 상태)
+float reflectedLux = 0;    // 순수 반사광 (LED 켠 상태 - 주변광)
+float avgReflectedLux = 0; // 반사광 평균
+float sumReflectedLux = 0;
+
 // 스캔 상태
-enum ScanState { IDLE, WHITE_LED, UV_LED, MEASURING, DONE };
+enum ScanState { IDLE, AMBIENT, WHITE_LED, UV_LED, MEASURING, DONE };
 ScanState scanState = IDLE;
 unsigned long scanStartTime = 0;
 int measureCount = 0;
@@ -131,14 +137,24 @@ void startScan() {
   whiteCaptureLen = 0;
   uvCaptureLen = 0;
 
-  scanState = WHITE_LED;
+  // 결과 초기화
+  avgMoisture = 0;
+  avgLux = 0;
+  avgWhite = 0;
+  avgALS = 0;
+  avgReflectedLux = 0;
+  ambientLux = 0;
+  reflectedLux = 0;
+  sumReflectedLux = 0;
+
+  scanState = AMBIENT;
   scanStartTime = millis();
   measureCount = 0;
   sumMoisture = 0;
   sumLux = 0;
   sumWhite = 0;
   sumALS = 0;
-  Serial.println("Scan started: WHITE_LED");
+  Serial.println("Scan started: AMBIENT");
 }
 
 // ===== 스캔 루프 처리 =====
@@ -147,31 +163,54 @@ void processScan() {
   unsigned long elapsed = millis() - scanStartTime;
 
   switch (scanState) {
+    case AMBIENT:
+      digitalWrite(PIN_LED_WHITE, LOW);
+      digitalWrite(PIN_LED_UV, LOW);
+      if (elapsed > 500) {
+        readVEML7700();
+        ambientLux = currentLux;
+        Serial.printf("Ambient lux: %.1f\n", ambientLux);
+        scanState = WHITE_LED;
+        scanStartTime = millis();
+        measureCount = 0;
+        Serial.println("Scan: WHITE_LED");
+      }
+      break;
+
     case WHITE_LED:
       digitalWrite(PIN_LED_WHITE, HIGH);
       digitalWrite(PIN_LED_UV, LOW);
-      
-      // 센서도 동시에 측정
-      if (elapsed > (unsigned long)(measureCount + 1) * 500 && measureCount < 3) {
+
+      // 500ms 간격 6회 측정 (3초 동안)
+      if (elapsed > (unsigned long)(measureCount + 1) * 500 && measureCount < 6) {
         currentRaw = readMoisture();
         readVEML7700();
         sumMoisture += currentRaw;
         sumLux += currentLux;
         sumWhite += currentWhite;
         sumALS += currentALS;
+        float reflected = currentLux - ambientLux;
+        if (reflected < 0) reflected = 0;
+        sumReflectedLux += reflected;
         measureCount++;
-        Serial.printf("Measure %d/6: raw=%d, lux=%.1f\n", measureCount, currentRaw, currentLux);
+        Serial.printf("Measure %d/6: raw=%d, lux=%.1f, reflected=%.1f\n", measureCount, currentRaw, currentLux, reflected);
       }
-      
-      // 1.5초에 캡처
-      if (elapsed > 1500 && whiteCaptureLen == 0) {
+
+      // 2초에 캡처
+      if (elapsed > 2000 && whiteCaptureLen == 0) {
         captureAndStore(&whiteCaptureData, &whiteCaptureLen);
         Serial.println("White capture done");
       }
-      
-      // 2초 후 UV로 전환
-      if (elapsed > 2000) {
+
+      // 3초 후 UV로 전환
+      if (elapsed > 3000) {
         digitalWrite(PIN_LED_WHITE, LOW);
+        // 결과 산출
+        avgMoisture = sumMoisture / 6.0;
+        avgLux = sumLux / 6.0;
+        avgWhite = sumWhite / 6.0;
+        avgALS = sumALS / 6.0;
+        avgReflectedLux = sumReflectedLux / 6.0;
         scanState = UV_LED;
         scanStartTime = millis();
         Serial.println("Scan: UV_LED");
@@ -181,34 +220,19 @@ void processScan() {
     case UV_LED:
       digitalWrite(PIN_LED_UV, HIGH);
       digitalWrite(PIN_LED_WHITE, LOW);
-      
-      // 센서도 동시에 측정 (이어서 3회 더)
-      if (elapsed > (unsigned long)(measureCount - 3) * 500 && measureCount < 6 && measureCount >= 3) {
-        currentRaw = readMoisture();
-        readVEML7700();
-        sumMoisture += currentRaw;
-        sumLux += currentLux;
-        sumWhite += currentWhite;
-        sumALS += currentALS;
-        measureCount++;
-        Serial.printf("Measure %d/6: raw=%d, lux=%.1f\n", measureCount, currentRaw, currentLux);
-      }
-      
-      // 1.5초에 캡처
-      if (elapsed > 1500 && uvCaptureLen == 0) {
+
+      // 0.5초에 캡처
+      if (elapsed > 500 && uvCaptureLen == 0) {
         captureAndStore(&uvCaptureData, &uvCaptureLen);
         Serial.println("UV capture done");
       }
-      
-      // 2초 후 완료
-      if (elapsed > 2000) {
+
+      // 1초 후 완료
+      if (elapsed > 1000) {
         digitalWrite(PIN_LED_UV, LOW);
-        avgMoisture = sumMoisture / 6.0;
-        avgLux = sumLux / 6.0;
-        avgWhite = sumWhite / 6.0;
-        avgALS = sumALS / 6.0;
+        digitalWrite(PIN_LED_WHITE, LOW);
         scanState = DONE;
-        Serial.println("Scan: DONE");
+        Serial.printf("Scan DONE: avgReflected=%.1f, avgMoisture=%.0f\n", avgReflectedLux, avgMoisture);
       }
       break;
 
