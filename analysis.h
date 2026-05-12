@@ -35,58 +35,42 @@ String getSkinAdvice(int pct) {
   return "수분이 충분합니다. 유분 조절에 신경쓰세요.";
 }
 
-// ===== 조도 분석 =====
+// ===== 유분 분석 (반사광 기반) =====
 
-String getLightLevel(float lux) {
-  if (lux < 50) return "어두움";
-  if (lux < 200) return "실내 조명";
-  if (lux < 1000) return "밝은 실내";
-  if (lux < 10000) return "흐린 날 실외";
-  if (lux < 30000) return "맑은 날 그늘";
-  return "직사광선";
+int calcOilPct(float reflectedLux) {
+  // 반사광이 높을수록 유분이 많음 (번들거림 = 반사 많음)
+  // 측정값 기준: 이마(유분) ~54, 팔뚝(건조) ~85 였지만 주변광 제거 후 재캘리브 필요
+  // 우선 0~50 lux 범위로 설정 (테스트 후 조정)
+  float minRef = 5.0;   // 건조한 피부 반사광 (낮음)
+  float maxRef = 50.0;  // 유분 많은 피부 반사광 (높음)
+
+  if (reflectedLux <= minRef) return 0;
+  if (reflectedLux >= maxRef) return 100;
+  return (int)((reflectedLux - minRef) / (maxRef - minRef) * 100.0);
 }
 
-String getLightColor(float lux) {
-  if (lux < 50) return "#6C757D";
-  if (lux < 200) return "#FFC107";
-  if (lux < 1000) return "#FF9800";
-  if (lux < 10000) return "#FF5722";
-  if (lux < 30000) return "#F44336";
-  return "#D32F2F";
+String getOilLevel(int pct) {
+  if (pct < 20) return "건조 (Dry)";
+  if (pct < 40) return "약간 건조 (Slightly Dry)";
+  if (pct < 60) return "보통 (Normal)";
+  if (pct < 80) return "약간 유분 (Slightly Oily)";
+  return "유분 많음 (Oily)";
 }
 
-String getUVAdvice(float lux) {
-  if (lux < 200) return "실내 환경입니다. 자외선 걱정 없어요.";
-  if (lux < 1000) return "약한 빛 노출. 장시간 시 가벼운 자외선 차단을 권장합니다.";
-  if (lux < 10000) return "야외 활동 시 자외선 차단제(SPF 30+)를 바르세요.";
-  if (lux < 30000) return "강한 빛입니다. SPF 50+ 자외선 차단제와 모자 착용을 권장합니다.";
-  return "매우 강한 직사광선! 외출 자제 또는 완벽한 자외선 차단이 필요합니다.";
+String getOilColor(int pct) {
+  if (pct < 20) return "#FF6B6B";
+  if (pct < 40) return "#FFA94D";
+  if (pct < 60) return "#69DB7C";
+  if (pct < 80) return "#FFC107";
+  return "#FF5722";
 }
 
-int calcUVIndex(float lux) {
-  if (lux < 200) return 0;
-  if (lux < 1000) return 1;
-  if (lux < 5000) return 3;
-  if (lux < 10000) return 5;
-  if (lux < 30000) return 7;
-  if (lux < 50000) return 9;
-  return 11;
-}
-
-String getUVIndexColor(int uvi) {
-  if (uvi <= 2) return "#4CAF50";
-  if (uvi <= 5) return "#FFC107";
-  if (uvi <= 7) return "#FF9800";
-  if (uvi <= 10) return "#F44336";
-  return "#9C27B0";
-}
-
-String getUVIndexLabel(int uvi) {
-  if (uvi <= 2) return "낮음";
-  if (uvi <= 5) return "보통";
-  if (uvi <= 7) return "높음";
-  if (uvi <= 10) return "매우 높음";
-  return "위험";
+String getOilAdvice(int pct) {
+  if (pct < 20) return "유분이 부족합니다. 유분감 있는 크림을 사용하세요.";
+  if (pct < 40) return "유분이 약간 부족합니다. 가벼운 오일 세럼을 권장합니다.";
+  if (pct < 60) return "유수분 밸런스가 좋습니다. 현재 루틴을 유지하세요.";
+  if (pct < 80) return "유분이 약간 많습니다. 가벼운 보습제를 사용하세요.";
+  return "유분이 많습니다. 유분 조절 제품을 사용하세요.";
 }
 
 #endif
