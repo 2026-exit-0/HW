@@ -1,0 +1,221 @@
+#ifndef ABOUT_SENSORS_H
+#define ABOUT_SENSORS_H
+
+#include <Wire.h>
+#include "Adafruit_VEML7700.h"
+
+#define FDC2112_ADDR 0x2A
+#define BASELINE 7
+#define MIN_VAL  3
+
+// 센서 실시간 변수
+uint16_t currentRaw = 7;
+uint16_t prevRaw = 7;
+float currentLux = 0;
+float currentWhite = 0;
+float currentALS = 0;
+bool vemlConnected = false;
+
+// 스캔 결과 평균값
+float avgMoisture = 0;
+float avgLux = 0;
+float avgWhite = 0;
+float avgALS = 0;
+
+// 스캔 상태
+enum ScanState { IDLE, WHITE_LED, UV_LED, MEASURING, DONE };
+ScanState scanState = IDLE;
+unsigned long scanStartTime = 0;
+int measureCount = 0;
+float sumMoisture = 0;
+float sumLux = 0;
+float sumWhite = 0;
+float sumALS = 0;
+
+// 캡처 이미지 저장
+uint8_t* whiteCaptureData = NULL;
+size_t whiteCaptureLen = 0;
+uint8_t* uvCaptureData = NULL;
+size_t uvCaptureLen = 0;
+
+Adafruit_VEML7700 veml = Adafruit_VEML7700();
+
+// ===== FDC2112 수분 센서 =====
+
+void writeRegister(uint8_t reg, uint16_t val) {
+  Wire.beginTransmission(FDC2112_ADDR);
+  Wire.write(reg);
+  Wire.write(val >> 8);
+  Wire.write(val & 0xFF);
+  Wire.endTransmission();
+}
+
+uint16_t readRegister(uint8_t reg) {
+  Wire.beginTransmission(FDC2112_ADDR);
+  Wire.write(reg);
+  Wire.endTransmission(false);
+  Wire.requestFrom(FDC2112_ADDR, 2);
+  return (Wire.read() << 8) | Wire.read();
+}
+
+void initFDC2112() {
+  writeRegister(0x1C, 0x020D);
+  writeRegister(0x08, 0x7FFF);
+  writeRegister(0x0C, 0x0064);
+  writeRegister(0x10, 0x047F);
+  delay(10);
+  writeRegister(0x1A, 0x1401);
+  delay(100);
+}
+
+uint16_t readMoisture() {
+  uint16_t val = readRegister(0x00);
+  return val & 0x0FFF;
+}
+
+// ===== VEML7700 조도 센서 =====
+
+void initVEML7700() {
+  if (veml.begin()) {
+    vemlConnected = true;
+    veml.setGain(VEML7700_GAIN_1);
+    veml.setIntegrationTime(VEML7700_IT_100MS);
+    Serial.println("VEML7700 connected! (0x10)");
+  } else {
+    vemlConnected = false;
+    Serial.println("VEML7700 NOT found!");
+  }
+}
+
+void readVEML7700() {
+  if (vemlConnected) {
+    currentLux = veml.readLux();
+    currentWhite = veml.readWhite();
+    currentALS = veml.readALS();
+  }
+}
+
+// ===== 카메라 캡처 저장 =====
+
+void captureAndStore(uint8_t** dest, size_t* destLen) {
+  if (*dest != NULL) {
+    free(*dest);
+    *dest = NULL;
+    *destLen = 0;
+  }
+  if (!cameraReady) return;
+
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) return;
+
+  *dest = (uint8_t*)malloc(fb->len);
+  if (*dest) {
+    memcpy(*dest, fb->buf, fb->len);
+    *destLen = fb->len;
+  }
+  esp_camera_fb_return(fb);
+}
+
+// ===== 스캔 시작 =====
+
+void startScan() {
+  // 이전 캡처 메모리 해제
+  if (whiteCaptureData != NULL) {
+    free(whiteCaptureData);
+    whiteCaptureData = NULL;
+  }
+  if (uvCaptureData != NULL) {
+    free(uvCaptureData);
+    uvCaptureData = NULL;
+  }
+  whiteCaptureLen = 0;
+  uvCaptureLen = 0;
+
+  scanState = WHITE_LED;
+  scanStartTime = millis();
+  measureCount = 0;
+  sumMoisture = 0;
+  sumLux = 0;
+  sumWhite = 0;
+  sumALS = 0;
+  Serial.println("Scan started: WHITE_LED");
+}
+
+// ===== 스캔 루프 처리 =====
+
+void processScan() {
+  unsigned long elapsed = millis() - scanStartTime;
+
+  switch (scanState) {
+    case WHITE_LED:
+      digitalWrite(PIN_LED_WHITE, HIGH);
+      digitalWrite(PIN_LED_UV, LOW);
+      
+      // 센서도 동시에 측정
+      if (elapsed > (unsigned long)(measureCount + 1) * 500 && measureCount < 3) {
+        currentRaw = readMoisture();
+        readVEML7700();
+        sumMoisture += currentRaw;
+        sumLux += currentLux;
+        sumWhite += currentWhite;
+        sumALS += currentALS;
+        measureCount++;
+        Serial.printf("Measure %d/6: raw=%d, lux=%.1f\n", measureCount, currentRaw, currentLux);
+      }
+      
+      // 1.5초에 캡처
+      if (elapsed > 1500 && whiteCaptureLen == 0) {
+        captureAndStore(&whiteCaptureData, &whiteCaptureLen);
+        Serial.println("White capture done");
+      }
+      
+      // 2초 후 UV로 전환
+      if (elapsed > 2000) {
+        digitalWrite(PIN_LED_WHITE, LOW);
+        scanState = UV_LED;
+        scanStartTime = millis();
+        Serial.println("Scan: UV_LED");
+      }
+      break;
+
+    case UV_LED:
+      digitalWrite(PIN_LED_UV, HIGH);
+      digitalWrite(PIN_LED_WHITE, LOW);
+      
+      // 센서도 동시에 측정 (이어서 3회 더)
+      if (elapsed > (unsigned long)(measureCount - 3) * 500 && measureCount < 6 && measureCount >= 3) {
+        currentRaw = readMoisture();
+        readVEML7700();
+        sumMoisture += currentRaw;
+        sumLux += currentLux;
+        sumWhite += currentWhite;
+        sumALS += currentALS;
+        measureCount++;
+        Serial.printf("Measure %d/6: raw=%d, lux=%.1f\n", measureCount, currentRaw, currentLux);
+      }
+      
+      // 1.5초에 캡처
+      if (elapsed > 1500 && uvCaptureLen == 0) {
+        captureAndStore(&uvCaptureData, &uvCaptureLen);
+        Serial.println("UV capture done");
+      }
+      
+      // 2초 후 완료
+      if (elapsed > 2000) {
+        digitalWrite(PIN_LED_UV, LOW);
+        avgMoisture = sumMoisture / 6.0;
+        avgLux = sumLux / 6.0;
+        avgWhite = sumWhite / 6.0;
+        avgALS = sumALS / 6.0;
+        scanState = DONE;
+        Serial.println("Scan: DONE");
+      }
+      break;
+
+    case DONE:
+    case IDLE:
+      break;
+  }
+}
+
+#endif
