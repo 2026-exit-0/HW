@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 펌웨어 README
+    url: https://github.com/YOUR_ORG/HW/blob/main/README.md
+    about: 회로도 / 핀맵 / 빌드 방법
