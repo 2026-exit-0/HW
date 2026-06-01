@@ -94,8 +94,6 @@ h1{color:#333;font-size:22px;margin-bottom:24px}
 .section{font-size:14px;font-weight:bold;color:#666;margin:24px 0 8px;padding-left:4px}
 .row{display:flex;gap:12px}
 .half{flex:1}
-.mini-val{font-size:20px;font-weight:bold;color:#333}
-.sub{font-size:11px;color:#aaa;margin-top:2px}
 .cam-img{width:100%;border-radius:8px;margin-top:8px;background:#eee;min-height:150px}
 .btn{display:block;width:100%;padding:16px;font-size:16px;font-weight:bold;color:white;background:#4CAF50;border:none;border-radius:12px;cursor:pointer;margin-bottom:16px}
 .btn:disabled{background:#ccc;cursor:not-allowed}
@@ -105,61 +103,106 @@ h1{color:#333;font-size:22px;margin-bottom:24px}
 .scanning-sub{font-size:14px;color:#888}
 .dot-anim::after{content:'';animation:dots 1.5s infinite}
 @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
-.hidden{display:none}
+
+/* 선택 UI */
+.select-group{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.select-btn{padding:8px 14px;border-radius:20px;border:2px solid #ddd;background:white;font-size:13px;cursor:pointer;transition:all 0.2s}
+.select-btn.active{border-color:#4CAF50;background:#4CAF50;color:white;font-weight:bold}
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.modal{background:white;border-radius:16px;padding:24px;width:90%;max-width:400px}
+.modal h2{font-size:18px;margin-bottom:16px;color:#333}
+.modal-btn{display:block;width:100%;padding:14px;font-size:15px;font-weight:bold;color:white;background:#4CAF50;border:none;border-radius:12px;cursor:pointer;margin-top:16px}
+.modal-btn:disabled{background:#ccc;cursor:not-allowed}
 </style></head><body>
 
 <h1>🌿 담다 피부 분석</h1>
 
 <button id='scanBtn' class='btn' onclick='startScan()'>🔍 피부 스캔 시작</button>
+<a id='csvBtn' class='btn' download='labels.csv'
+   style='background:#2196F3;text-align:center;text-decoration:none;display:none'>
+  📥 labels.csv 저장
+</a>
 
-<div id='scanningMsg' class='card hidden'>
-<div class='scanning'>
-<div class='scanning-text dot-anim' id='scanText'>측정 중입니다</div>
-<div class='scanning-sub' id='scanSub'>준비 중...</div>
-</div>
+<!-- 스캔 완료 후 팀원/부위 선택 모달 -->
+<div class='modal-overlay' id='selectModal'>
+  <div class='modal'>
+    <h2>📋 측정 정보 입력</h2>
+
+    <div class='label'>팀원 선택</div>
+    <div class='select-group' id='memberGroup'>
+      <button class='select-btn' onclick='selectMember("M1")'>M1</button>
+      <button class='select-btn' onclick='selectMember("M2")'>M2</button>
+      <button class='select-btn' onclick='selectMember("M3")'>M3</button>
+      <button class='select-btn' onclick='selectMember("M4")'>M4</button>
+      <button class='select-btn' onclick='selectMember("M5")'>M5</button>
+    </div>
+
+    <div class='label' style='margin-top:16px'>부위 선택</div>
+    <div class='select-group' id='partGroup'>
+      <button class='select-btn' onclick='selectPart("FOREHEAD")'>이마</button>
+      <button class='select-btn' onclick='selectPart("GLABELLA")'>미간</button>
+      <button class='select-btn' onclick='selectPart("L_EYE")'>눈가(좌)</button>
+      <button class='select-btn' onclick='selectPart("R_EYE")'>눈가(우)</button>
+      <button class='select-btn' onclick='selectPart("L_CHEEK")'>볼(좌)</button>
+      <button class='select-btn' onclick='selectPart("R_CHEEK")'>볼(우)</button>
+      <button class='select-btn' onclick='selectPart("CHIN")'>턱</button>
+    </div>
+
+    <button class='modal-btn' id='confirmBtn' onclick='confirmAndDownload()' disabled>
+      💾 저장 및 다운로드
+    </button>
+  </div>
 </div>
 
-<div id='resultSection' class='hidden'>
+<div id='scanningMsg' class='card' style='display:none'>
+  <div class='scanning'>
+    <div class='scanning-text dot-anim' id='scanText'>측정 중입니다</div>
+    <div class='scanning-sub' id='scanSub'>준비 중...</div>
+  </div>
+</div>
+
+<div id='resultSection' style='display:none'>
 
 <div class='section'>📷 피부 촬영</div>
 <div class='row'>
-<div class='card half'>
-<div class='label'>백색 LED 촬영</div>
-<img id='whiteImg' class='cam-img' src=''>
-</div>
-<div class='card half'>
-<div class='label'>UV LED 촬영</div>
-<img id='uvImg' class='cam-img' src=''>
-</div>
+  <div class='card half'>
+    <div class='label'>백색 LED 촬영</div>
+    <img id='whiteImg' class='cam-img' src=''>
+  </div>
+  <div class='card half'>
+    <div class='label'>UV LED 촬영</div>
+    <img id='uvImg' class='cam-img' src=''>
+  </div>
 </div>
 
 <div class='section'>💧 피부 수분</div>
 <div class='card'>
-<div class='label'>수분도</div>
-<div class='value'><span id='moistPct'>-</span> %</div>
-<div class='bar-bg'><div id='mBar' class='bar-fill' style='width:0%'></div></div>
+  <div class='label'>수분도</div>
+  <div class='value'><span id='moistPct'>-</span> %</div>
+  <div class='bar-bg'><div id='mBar' class='bar-fill' style='width:0%'></div></div>
 </div>
 <div class='card'>
-<div class='label'>피부 타입 (수분)</div>
-<div><span id='skinBadge' class='badge'>-</span></div>
-<div id='moistAdvice' class='advice'>-</div>
+  <div class='label'>피부 타입 (수분)</div>
+  <div><span id='skinBadge' class='badge'>-</span></div>
+  <div id='moistAdvice' class='advice'>-</div>
 </div>
 
 <div class='section'>✨ 피부 유분</div>
 <div class='card'>
-<div class='label'>유분도</div>
-<div class='value'><span id='oilPct'>-</span> %</div>
-<div class='bar-bg'><div id='oBar' class='bar-fill' style='width:0%'></div></div>
+  <div class='label'>유분도</div>
+  <div class='value'><span id='oilPct'>-</span> %</div>
+  <div class='bar-bg'><div id='oBar' class='bar-fill' style='width:0%'></div></div>
 </div>
 <div class='card'>
-<div class='label'>유분 상태</div>
-<div><span id='oilBadge' class='badge'>-</span></div>
-<div id='oilAdvice' class='advice'>-</div>
+  <div class='label'>유분 상태</div>
+  <div><span id='oilBadge' class='badge'>-</span></div>
+  <div id='oilAdvice' class='advice'>-</div>
 </div>
 
 <div class='section'>🔧 RAW 데이터</div>
 <div class='card'>
-<div id='rawData' style='font-family:monospace;font-size:13px;color:#aaa;line-height:2'></div>
+  <div id='rawData' style='font-family:monospace;font-size:13px;color:#aaa;line-height:2'></div>
 </div>
 
 </div>
@@ -167,13 +210,84 @@ h1{color:#333;font-size:22px;margin-bottom:24px}
 <script>
 var polling=null;
 var lastState='idle';
+var currentData=null;
+var selectedMember='';
+var selectedPart='';
+
+function selectMember(m){
+  selectedMember=m;
+  document.querySelectorAll('#memberGroup .select-btn').forEach(function(b){b.classList.remove('active')});
+  event.target.classList.add('active');
+  checkConfirmBtn();
+}
+
+function selectPart(p){
+  selectedPart=p;
+  document.querySelectorAll('#partGroup .select-btn').forEach(function(b){b.classList.remove('active')});
+  event.target.classList.add('active');
+  checkConfirmBtn();
+}
+
+function checkConfirmBtn(){
+  document.getElementById('confirmBtn').disabled=!(selectedMember && selectedPart);
+}
+
+function confirmAndDownload(){
+  if(!selectedMember || !selectedPart) return;
+  var d=currentData;
+  var ts=new Date();
+  var timestamp=ts.getFullYear().toString()
+    +(('0'+(ts.getMonth()+1)).slice(-2))
+    +(('0'+ts.getDate()).slice(-2))+'_'
+    +(('0'+ts.getHours()).slice(-2))
+    +(('0'+ts.getMinutes()).slice(-2))
+    +(('0'+ts.getSeconds()).slice(-2));
+
+  var prefix=timestamp+'_'+selectedMember+'_'+selectedPart;
+
+  // white.jpg 다운로드
+  if(d.hasWhite){
+    var a=document.createElement('a');
+    a.href='/capture/white?t='+Date.now();
+    a.download=prefix+'_white.jpg';
+    a.click();
+  }
+
+  // uv.jpg 다운로드 (500ms 딜레이)
+  setTimeout(function(){
+    if(d.hasUV){
+      var a=document.createElement('a');
+      a.href='/capture/uv?t='+Date.now();
+      a.download=prefix+'_uv.jpg';
+      a.click();
+    }
+  }, 500);
+
+  // labels.csv 생성
+  var csvData='timestamp,member,part,moistPct,oilPct,skinType,oilLevel,ambientLux,reflectedLux\n';
+  csvData+=timestamp+','+selectedMember+','+selectedPart+','+d.moistPct+','+d.oilPct+','+d.skinType+','+d.oilLevel+','+d.ambientLux+','+d.reflectedLux+'\n';
+  var blob=new Blob([csvData],{type:'text/csv'});
+  var url=URL.createObjectURL(blob);
+  var btn=document.getElementById('csvBtn');
+  btn.href=url;
+  btn.style.display='block';
+
+  // 모달 닫기
+  document.getElementById('selectModal').classList.remove('show');
+
+  // 선택 초기화
+  selectedMember='';
+  selectedPart='';
+  document.querySelectorAll('.select-btn').forEach(function(b){b.classList.remove('active')});
+  document.getElementById('confirmBtn').disabled=true;
+}
 
 function startScan(){
   document.getElementById('scanBtn').disabled=true;
   document.getElementById('scanBtn').textContent='스캔 진행 중...';
-  document.getElementById('scanningMsg').classList.remove('hidden');
-  document.getElementById('resultSection').classList.add('hidden');
-
+  document.getElementById('scanningMsg').style.display='block';
+  document.getElementById('resultSection').style.display='none';
+  document.getElementById('csvBtn').style.display='none';
   fetch('/scan').then(function(r){return r.json();}).then(function(){});
 }
 
@@ -184,53 +298,41 @@ function pollStatus(){
     var btn=document.getElementById('scanBtn');
 
     if(d.state=='ambient'){
-      document.getElementById('scanningMsg').classList.remove('hidden');
-      document.getElementById('resultSection').classList.add('hidden');
-      btn.disabled=true;
-      btn.textContent='스캔 진행 중...';
       txt.textContent='측정 중입니다';
       sub.textContent='주변광 측정 중...';
-    } else if(d.state=='white'){
-      document.getElementById('scanningMsg').classList.remove('hidden');
-      document.getElementById('resultSection').classList.add('hidden');
       btn.disabled=true;
-      btn.textContent='스캔 진행 중...';
+    } else if(d.state=='white'){
       txt.textContent='측정 중입니다';
       sub.textContent='백색 LED 촬영 + 센서 측정 중...';
+      btn.disabled=true;
     } else if(d.state=='uv'){
-      document.getElementById('scanningMsg').classList.remove('hidden');
-      document.getElementById('resultSection').classList.add('hidden');
-      btn.disabled=true;
-      btn.textContent='스캔 진행 중...';
       txt.textContent='측정 중입니다';
-      sub.textContent='UV LED 촬영 + 센서 측정 중...';
-    } else if(d.state=='measuring'){
-      document.getElementById('scanningMsg').classList.remove('hidden');
-      document.getElementById('resultSection').classList.add('hidden');
+      sub.textContent='UV LED 촬영 중...';
       btn.disabled=true;
-      btn.textContent='스캔 진행 중...';
-      txt.textContent='측정 중입니다';
-      sub.textContent='센서 데이터 수집 중...';
     } else if(d.state=='done'){
-      showResult(d);
+      if(lastState!='done'){
+        showResult(d);
+      }
     } else {
-      // idle 상태
       btn.disabled=false;
       btn.textContent='🔍 피부 스캔 시작';
     }
-
     lastState=d.state;
   }).catch(function(){});
 }
 
 function showResult(d){
-  document.getElementById('scanningMsg').classList.add('hidden');
-  document.getElementById('resultSection').classList.remove('hidden');
+  currentData=d;
+  document.getElementById('scanningMsg').style.display='none';
+  document.getElementById('resultSection').style.display='block';
   document.getElementById('scanBtn').disabled=false;
   document.getElementById('scanBtn').textContent='🔍 다시 스캔';
 
-  if(d.hasWhite) document.getElementById('whiteImg').src='/capture/white?t='+Date.now();
-  if(d.hasUV) document.getElementById('uvImg').src='/capture/uv?t='+Date.now();
+  // 이미지 로딩
+  setTimeout(function(){
+    if(d.hasWhite) document.getElementById('whiteImg').src='/capture/white?t='+Date.now();
+    if(d.hasUV) document.getElementById('uvImg').src='/capture/uv?t='+Date.now();
+  }, 500);
 
   // 수분
   document.getElementById('moistPct').textContent=d.moistPct;
@@ -258,16 +360,16 @@ function showResult(d){
   t+='주변광: '+d.ambientLux+' lux<br>';
   t+='반사광 (평균): '+d.reflectedLux+' lux<br>';
   t+='카메라: '+(d.cam?'✅':'❌')+'<br>';
-  t+='VEML7700: '+(d.veml?'✅':'❌')+'<br>';
-  t+='I2C: 0x2A(수분) '+(d.veml?'0x10(유분) ✅':'0x10(유분) ❌');
+  t+='VEML7700: '+(d.veml?'✅':'❌');
   raw.innerHTML=t;
+
+  // 모달 표시
+  document.getElementById('selectModal').classList.add('show');
 }
 
-// 항상 상태 감시 (스위치로 시작해도 감지)
 polling=setInterval(pollStatus,1000);
 </script>
 </body></html>)rawliteral";
-
   server.send(200, "text/html", html);
 }
 

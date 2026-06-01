@@ -5,8 +5,8 @@
 #include "Adafruit_VEML7700.h"
 
 #define FDC2112_ADDR 0x2A
-#define BASELINE 7
-#define MIN_VAL  3
+#define BASELINE 3000     // 테스트 수치 (실제 확인 후 수정 필요)
+#define MIN_VAL  1000     // 테스트 수치 (실제 확인 후 수정 필요)
 
 // 센서 실시간 변수
 uint16_t currentRaw = 7;
@@ -227,8 +227,8 @@ void processScan() {
         Serial.println("UV capture done");
       }
 
-      // 1초 후 완료
-      if (elapsed > 1000) {
+      // 캡처 완료 확인 후 DONE
+      if (elapsed > 1000 && uvCaptureLen > 0) {
         digitalWrite(PIN_LED_UV, LOW);
         digitalWrite(PIN_LED_WHITE, LOW);
         scanState = DONE;
