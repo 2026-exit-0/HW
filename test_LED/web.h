@@ -94,7 +94,7 @@ h1{color:#333;font-size:22px;margin-bottom:24px}
 .section{font-size:14px;font-weight:bold;color:#666;margin:24px 0 8px;padding-left:4px}
 .row{display:flex;gap:12px}
 .half{flex:1}
-.cam-img{width:100%;border-radius:8px;margin-top:8px;background:#eee;min-height:150px}
+.cam-img{width:100%;border-radius:8px;margin-top:8px;background:#eee;min-height:150px;display:block;object-fit:cover}
 .btn{display:block;width:100%;padding:16px;font-size:16px;font-weight:bold;color:white;background:#4CAF50;border:none;border-radius:12px;cursor:pointer;margin-bottom:16px}
 .btn:disabled{background:#ccc;cursor:not-allowed}
 .btn:active{background:#388E3C}
@@ -255,12 +255,27 @@ function confirmAndDownload(){
 
   // uv.jpg 다운로드 (500ms 딜레이)
   setTimeout(function(){
-    if(d.hasUV){
-      var a=document.createElement('a');
-      a.href='/capture/uv?t='+Date.now();
-      a.download=prefix+'_uv.jpg';
-      a.click();
+    var wi = document.getElementById('whiteImg');
+    var ui = document.getElementById('uvImg');
+    
+    if(d.hasWhite){
+      wi.src='/capture/white?t='+Date.now();
+      wi.alt='백색 LED';
+    } else {
+      wi.alt='캡처 없음';
+      wi.style.background='#ddd';
     }
+    
+    if(d.hasUV){
+      ui.src='/capture/uv?t='+Date.now();  
+      ui.alt='UV LED';
+    } else {
+      ui.alt='캡처 없음';
+      ui.style.background='#ddd';
+    }
+
+    // ✅ 디버그: 콘솔에서 캡처 여부 확인
+    console.log('hasWhite:', d.hasWhite, 'hasUV:', d.hasUV);
   }, 500);
 
   // labels.csv 생성
