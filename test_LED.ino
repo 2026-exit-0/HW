@@ -22,8 +22,9 @@ IPAddress subnet(255, 255, 255, 0);
 
 // ===== 스위치 디바운스 변수 =====
 unsigned long lastSwitchPress = 0;
-
+unsigned long switchHoldStart = 0;
 bool lastSwitchState = HIGH;
+bool holdProcessed = false;
 
 void setup() {
   Serial.begin(115200);
@@ -82,23 +83,44 @@ void setup() {
 void loop() {
   server.handleClient();
 
-  // 스위치 눌림 감지 (LOW = 눌림, INPUT_PULLUP 사용)
+  // ===== 스위치 처리 =====
   bool sw = digitalRead(PIN_SWITCH);
-  if (sw == LOW && lastSwitchState == HIGH && millis() - lastSwitchPress > 300) {
-    if (scanState == IDLE || scanState == DONE) {
-      startScan();
-      lastSwitchPress = millis();
-      Serial.println("Switch pressed - scan started");
+
+  if (sw == LOW && lastSwitchState == HIGH) {
+    // 누르기 시작
+    switchHoldStart = millis();
+    holdProcessed = false;
+  }
+
+  if (sw == LOW) {
+    // 누르고 있는 중 - 3초 이상이면 전원 끄기
+    if (!holdProcessed && millis() - switchHoldStart > 3000) {
+      holdProcessed = true;
+      Serial.println("Long press - shutting down...");
+      digitalWrite(PIN_LED_WHITE, LOW);
+      digitalWrite(PIN_LED_UV, LOW);
+      esp_deep_sleep_start();
+    }
+  } else if (sw == HIGH && lastSwitchState == LOW) {
+    // 짧게 눌렀다 뗀 경우 - 스캔 시작
+    if (!holdProcessed && millis() - switchHoldStart < 3000
+        && millis() - lastSwitchPress > 300) {
+      if (scanState == IDLE || scanState == DONE) {
+        startScan();
+        lastSwitchPress = millis();
+        Serial.println("Switch pressed - scan started");
+      }
     }
   }
+
   lastSwitchState = sw;
 
-  // 스캔 진행 중이면 처리
+  // ===== 스캔 처리 =====
   if (scanState != IDLE && scanState != DONE) {
     processScan();
   }
 
-  // 대기 상태에서는 LED 끄기
+  // ===== 대기 상태에서는 LED 끄기 =====
   if (scanState == IDLE) {
     digitalWrite(PIN_LED_WHITE, LOW);
     digitalWrite(PIN_LED_UV, LOW);
