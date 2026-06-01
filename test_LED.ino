@@ -2,12 +2,8 @@
 #include <WiFi.h>
 
 // ===== Wi-Fi 설정 =====
-const char* ssid = "minaong309";
-const char* password = "lunaeong46&!)";
-
-IPAddress local_IP(10, 174, 185, 100);
-IPAddress gateway(10, 174, 185, 132);
-IPAddress subnet(255, 255, 255, 0);
+const char* ap_ssid = "DAMDA_SKIN";
+const char* ap_password = "12345678";
 
 // ===== 핀 설정 =====
 #define PIN_LED_WHITE 13
@@ -55,22 +51,9 @@ void setup() {
     }
   }
 
-  // Wi-Fi 연결
-  WiFi.config(local_IP, gateway, subnet);
-  WiFi.begin(ssid, password);
-
-  int retry = 0;
-  while (WiFi.status() != WL_CONNECTED && retry < 20) {
-    delay(500);
-    Serial.print(".");
-    retry++;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi: " + WiFi.localIP().toString());
-  } else {
-    Serial.println("\nWiFi FAILED");
-  }
+  // AP 모드 시작
+  WiFi.softAP(ap_ssid, ap_password);
+  Serial.println("AP Mode IP: " + WiFi.softAPIP().toString());
 
   // 웹 서버 시작
   initWebServer();
