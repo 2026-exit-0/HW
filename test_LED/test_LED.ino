@@ -1,5 +1,8 @@
 #include <Wire.h>
 #include <WiFi.h>
+#include <WiFiMulti.h>
+
+WiFiMulti wifiMulti;
 
 const char* ap_ssid = "DAMDA_SKIN";
 const char* ap_password = "12345678";
@@ -35,8 +38,22 @@ void setup() {
   Serial.println("FDC2112 init done");
   initVEML7700();
 
+  // AP 모드 (웹페이지용)
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ap_ssid, ap_password);
   Serial.println("AP Mode IP: " + WiFi.softAPIP().toString());
+
+  // STA 모드 (Supabase 전송용) - 여기에 핫스팟 입력
+  wifiMulti.addAP("minaong309", "lunaeong46&!)");
+  // wifiMulti.addAP("핫스팟이름2", "비밀번호2");
+  // wifiMulti.addAP("핫스팟이름3", "비밀번호3");
+
+  Serial.println("Connecting to WiFi...");
+  if(wifiMulti.run() == WL_CONNECTED) {
+    Serial.println("STA IP: " + WiFi.localIP().toString());
+  } else {
+    Serial.println("STA connect failed - Supabase unavailable");
+  }
 
   initWebServer();
 
@@ -79,30 +96,27 @@ void loop() {
     processScan();
   }
 
-if(scanState == DONE && !needSend){
-needSend = true;
-sentTime = millis();
-}
+  if(scanState == DONE && !needSend){
+    needSend = true;
+    sentTime = millis();
+  }
 
-// DONE 상태로 3초 유지 후 전송
-if(scanState == DONE && needSend && millis() - sentTime > 3000){
-Serial.println("Sending data to server...");
-sendDataToServer(avgMoisture, avgReflectedLux,
-whiteCaptureData, whiteCaptureLen,
-uvCaptureData, uvCaptureLen);
-needSend = false;
-scanState = IDLE;
-}
+  if(scanState == DONE && needSend && millis() - sentTime > 3000){
+    // Supabase 전송 전 WiFi 재연결 시도
+    if(wifiMulti.run() != WL_CONNECTED){
+      Serial.println("No internet - skip Supabase");
+    } else {
+      Serial.println("Sending data to Supabase...");
+      sendDataToSupabase(avgMoisture, avgReflectedLux,
+                         whiteCaptureData, whiteCaptureLen,
+                         uvCaptureData, uvCaptureLen);
+    }
+    needSend = false;
+    scanState = IDLE;
+  }
 
-if(scanState == IDLE){
-digitalWrite(PIN_LED_WHITE, LOW);
-digitalWrite(PIN_LED_UV, LOW);
+  if(scanState == IDLE){
+    digitalWrite(PIN_LED_WHITE, LOW);
+    digitalWrite(PIN_LED_UV, LOW);
+  }
 }
-}
-
-
-// main.py 실행: uvicorn main:app --host 0.0.0.0 --port 8000
-// ESP32 업로드
-// 노트북을 DAMDA_SKIN 와이파이에 연결
-// 브라우저에서 http://192.168.4.1 접속
-// 팀원/부위 선택 → 스캔 시작
