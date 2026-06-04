@@ -1,5 +1,8 @@
 #include <Wire.h>
 #include <WiFi.h>
+#include <WiFiMulti.h>
+
+WiFiMulti wifiMulti;
 
 const char* ap_ssid = "DAMDA_SKIN";
 const char* ap_password = "12345678";
@@ -35,8 +38,21 @@ void setup() {
   Serial.println("FDC2112 init done");
   initVEML7700();
 
+  // AP 모드 (웹페이지용)
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ap_ssid, ap_password);
   Serial.println("AP Mode IP: " + WiFi.softAPIP().toString());
+
+  // STA 모드 (Supabase 전송용)
+  wifiMulti.addAP("minaong309", "lunaeong46&!)");
+  wifiMulti.addAP("Rimrim", "rim0723!");
+
+  Serial.println("Connecting to WiFi...");
+  if(wifiMulti.run() == WL_CONNECTED){
+    Serial.println("STA IP: " + WiFi.localIP().toString());
+  } else {
+    Serial.println("STA connect failed - Supabase unavailable");
+  }
 
   initWebServer();
 
@@ -49,6 +65,9 @@ void setup() {
 
 void loop() {
   server.handleClient();
+
+  // WiFi 연결 유지
+  wifiMulti.run();
 
   bool sw = digitalRead(PIN_SWITCH);
 
@@ -92,7 +111,7 @@ void loop() {
   }
 
   if(scanState == DONE && needSend && millis() - sentTime > 3000){
-    Serial.println("Sending data to server...");
+    Serial.println("Sending data to Supabase...");
     sendDataToSupabase(avgMoisture, avgReflectedLux,
                        whiteCaptureData, whiteCaptureLen,
                        uvCaptureData, uvCaptureLen);
