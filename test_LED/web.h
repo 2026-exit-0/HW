@@ -132,6 +132,7 @@ void handleStatus() {
     case UV_LED: state="uv"; break;
     case MEASURING: state="measuring"; break;
     case DONE: state="done"; break;
+    case SENT: state="done"; break;
   }
   server.send(200, "application/json", "{\"state\":\""+state+"\"}");
 }

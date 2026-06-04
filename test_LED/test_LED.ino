@@ -18,6 +18,8 @@ unsigned long lastSwitchPress = 0;
 unsigned long switchHoldStart = 0;
 bool lastSwitchState = HIGH;
 bool holdProcessed = false;
+unsigned long sentTime = 0;
+bool needSend = false;
 
 void setup() {
   Serial.begin(115200);
@@ -77,19 +79,25 @@ void loop() {
     processScan();
   }
 
-  if(scanState == DONE){
-    Serial.println("Sending data to server...");
-    sendDataToServer(avgMoisture, avgReflectedLux,
-                     whiteCaptureData, whiteCaptureLen,
-                     uvCaptureData, uvCaptureLen);
-    scanState = IDLE;  // sendDataToServer 완료 후 IDLE로 변경
-    // 웹UI는 /status 폴링으로 done → idle 순서로 감지함
-  }
+if(scanState == DONE && !needSend){
+needSend = true;
+sentTime = millis();
+}
 
-  if(scanState == IDLE){
-    digitalWrite(PIN_LED_WHITE, LOW);
-    digitalWrite(PIN_LED_UV, LOW);
-  }
+// DONE 상태로 3초 유지 후 전송
+if(scanState == DONE && needSend && millis() - sentTime > 3000){
+Serial.println("Sending data to server...");
+sendDataToServer(avgMoisture, avgReflectedLux,
+whiteCaptureData, whiteCaptureLen,
+uvCaptureData, uvCaptureLen);
+needSend = false;
+scanState = IDLE;
+}
+
+if(scanState == IDLE){
+digitalWrite(PIN_LED_WHITE, LOW);
+digitalWrite(PIN_LED_UV, LOW);
+}
 }
 
 

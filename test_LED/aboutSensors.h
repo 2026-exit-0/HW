@@ -29,7 +29,7 @@ float avgReflectedLux = 0; // 반사광 평균
 float sumReflectedLux = 0;
 
 // 스캔 상태
-enum ScanState { IDLE, AMBIENT, WHITE_LED, UV_LED, MEASURING, DONE };
+enum ScanState { IDLE, AMBIENT, WHITE_LED, UV_LED, MEASURING, DONE, SENT };
 ScanState scanState = IDLE;
 unsigned long scanStartTime = 0;
 int measureCount = 0;
