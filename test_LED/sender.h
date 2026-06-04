@@ -2,69 +2,44 @@
 #define SENDER_H
 
 #include <HTTPClient.h>
-#include <WiFiClientSecure.h>
 
-#define SUPABASE_URL "https://roghtpxrhxkicleukrfz.supabase.co"
-#define SUPABASE_KEY "sb_publishable_i6hDxJVq5ikMLhcVz2KioA_S1f-tQEn"
-
-String uploadImage(uint8_t* data, size_t len, String filename) {
-  if (!data || len == 0) return "";
-
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  String url = String(SUPABASE_URL) + "/storage/v1/object/images/" + filename;
-
-  http.begin(client, url);
-  http.addHeader("Authorization", "Bearer " + String(SUPABASE_KEY));
-  http.addHeader("Content-Type", "image/jpeg");
-
-  int code = http.PUT(data, len);
-  Serial.printf("Image upload %s: %d\n", filename.c_str(), code);
-  http.end();
-
-  if (code == 200 || code == 201) {
-    return String(SUPABASE_URL) + "/storage/v1/object/public/images/" + filename;
-  }
-  return "";
-}
+// 노트북 IP (DAMDA_SKIN 연결 시 보통 192.168.4.2)
+#define SERVER_IP "192.168.4.2"
+#define SERVER_PORT 8000
 
 void sendDataToSupabase(float moisture, float oil,
                         uint8_t* whiteData, size_t whiteLen,
                         uint8_t* uvData, size_t uvLen) {
 
-  String ts = String(millis());
-
-  // 이미지 업로드
-  String whiteUrl = uploadImage(whiteData, whiteLen,
-    selectedMember + "_" + selectedPart + "_" + ts + "_white.jpg");
-  String uvUrl = uploadImage(uvData, uvLen,
-    selectedMember + "_" + selectedPart + "_" + ts + "_uv.jpg");
-
-  // DB 저장
-  WiFiClientSecure client;
-  client.setInsecure();
-
+  String base = "http://" + String(SERVER_IP) + ":" + String(SERVER_PORT);
   HTTPClient http;
-  http.begin(client, String(SUPABASE_URL) + "/rest/v1/scans");
-  http.addHeader("apikey", SUPABASE_KEY);
-  http.addHeader("Authorization", "Bearer " + String(SUPABASE_KEY));
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Prefer", "return=minimal");
 
-  String json = "{";
-  json += "\"member\":\"" + selectedMember + "\"";
-  json += ",\"part\":\"" + selectedPart + "\"";
-  json += ",\"moisture\":" + String(moisture);
-  json += ",\"oil\":" + String(oil);
-  json += ",\"white_img\":\"" + whiteUrl + "\"";
-  json += ",\"uv_img\":\"" + uvUrl + "\"";
-  json += "}";
-
-  int code = http.POST(json);
-  Serial.printf("DB insert: %d\n", code);
+  // 센서 데이터 전송
+  http.begin(base + "/sensor");
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  String data = "member=" + selectedMember + "&part=" + selectedPart +
+                "&moisture=" + String(moisture) + "&oil=" + String(oil);
+  int code = http.POST(data);
+  Serial.printf("Sensor POST: %d\n", code);
   http.end();
+
+  // white 이미지 전송
+  if(whiteData && whiteLen > 0){
+    http.begin(base + "/image/white");
+    http.addHeader("Content-Type", "image/jpeg");
+    code = http.POST(whiteData, whiteLen);
+    Serial.printf("White POST: %d\n", code);
+    http.end();
+  }
+
+  // uv 이미지 전송
+  if(uvData && uvLen > 0){
+    http.begin(base + "/image/uv");
+    http.addHeader("Content-Type", "image/jpeg");
+    code = http.POST(uvData, uvLen);
+    Serial.printf("UV POST: %d\n", code);
+    http.end();
+  }
 }
 
 #endif

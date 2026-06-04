@@ -1,8 +1,5 @@
 #include <Wire.h>
 #include <WiFi.h>
-#include <WiFiMulti.h>
-
-WiFiMulti wifiMulti;
 
 const char* ap_ssid = "DAMDA_SKIN";
 const char* ap_password = "12345678";
@@ -38,27 +35,16 @@ void setup() {
   Serial.println("FDC2112 init done");
   initVEML7700();
 
-  // AP 모드 (웹페이지용)
-  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ap_ssid, ap_password);
   Serial.println("AP Mode IP: " + WiFi.softAPIP().toString());
-
-  // STA 모드 (Supabase 전송용) - 여기에 핫스팟 입력
-  wifiMulti.addAP("minaong309", "lunaeong46&!)");
-  wifiMulti.addAP("Rimrim", "rim0723!");
-  // wifiMulti.addAP("핫스팟이름3", "비밀번호3");
-
-  Serial.println("Connecting to WiFi...");
-  if(wifiMulti.run() == WL_CONNECTED) {
-    Serial.println("STA IP: " + WiFi.localIP().toString());
-  } else {
-    Serial.println("STA connect failed - Supabase unavailable");
-  }
 
   initWebServer();
 
   digitalWrite(PIN_LED_WHITE, LOW);
   digitalWrite(PIN_LED_UV, LOW);
+
+  switchHoldStart = millis();
+  lastSwitchState = digitalRead(PIN_SWITCH);
 }
 
 void loop() {
@@ -67,20 +53,23 @@ void loop() {
   bool sw = digitalRead(PIN_SWITCH);
 
   if(sw == LOW && lastSwitchState == HIGH){
-    switchHoldStart = millis();
-    holdProcessed = false;
+    if(millis() > 1000){
+      switchHoldStart = millis();
+      holdProcessed = false;
+    }
   }
 
-  if(sw == LOW){
-    if(!holdProcessed && millis() - switchHoldStart > 5000){
+  if(sw == LOW && !holdProcessed && switchHoldStart > 0){
+    if(millis() - switchHoldStart > 5000){
       holdProcessed = true;
       Serial.println("Long press - shutting down...");
       digitalWrite(PIN_LED_WHITE, LOW);
       digitalWrite(PIN_LED_UV, LOW);
-      // esp_deep_sleep_start();
+      esp_deep_sleep_start();
     }
   } else if(sw == HIGH && lastSwitchState == LOW){
-    if(!holdProcessed && millis() - switchHoldStart < 5000
+    if(!holdProcessed && switchHoldStart > 0
+        && millis() - switchHoldStart < 5000
         && millis() - lastSwitchPress > 300){
       if(scanState == IDLE || scanState == DONE){
         startScan();
@@ -88,6 +77,7 @@ void loop() {
         Serial.println("Switch pressed - scan started");
       }
     }
+    switchHoldStart = 0;
   }
 
   lastSwitchState = sw;
@@ -102,15 +92,10 @@ void loop() {
   }
 
   if(scanState == DONE && needSend && millis() - sentTime > 3000){
-    // Supabase 전송 전 WiFi 재연결 시도
-    if(wifiMulti.run() != WL_CONNECTED){
-      Serial.println("No internet - skip Supabase");
-    } else {
-      Serial.println("Sending data to Supabase...");
-      sendDataToSupabase(avgMoisture, avgReflectedLux,
-                         whiteCaptureData, whiteCaptureLen,
-                         uvCaptureData, uvCaptureLen);
-    }
+    Serial.println("Sending data to server...");
+    sendDataToSupabase(avgMoisture, avgReflectedLux,
+                       whiteCaptureData, whiteCaptureLen,
+                       uvCaptureData, uvCaptureLen);
     needSend = false;
     scanState = IDLE;
   }
