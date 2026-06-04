@@ -45,7 +45,7 @@ void setup() {
 
   // STA 모드 (Supabase 전송용) - 여기에 핫스팟 입력
   wifiMulti.addAP("minaong309", "lunaeong46&!)");
-  // wifiMulti.addAP("핫스팟이름2", "비밀번호2");
+  wifiMulti.addAP("Rimrim", "rim0723!");
   // wifiMulti.addAP("핫스팟이름3", "비밀번호3");
 
   Serial.println("Connecting to WiFi...");

@@ -14,6 +14,7 @@ String uploadImage(uint8_t* data, size_t len, String filename) {
   String url = String(SUPABASE_URL) + "/storage/v1/object/images/" + filename;
 
   http.begin(url);
+  http.setInsecure(); // SSL 인증서 검증 생략
   http.addHeader("Authorization", "Bearer " + String(SUPABASE_KEY));
   http.addHeader("Content-Type", "image/jpeg");
 
@@ -42,6 +43,7 @@ void sendDataToSupabase(float moisture, float oil,
   // DB 저장
   HTTPClient http;
   http.begin(String(SUPABASE_URL) + "/rest/v1/scans");
+  http.setInsecure(); // SSL 인증서 검증 생략
   http.addHeader("apikey", SUPABASE_KEY);
   http.addHeader("Authorization", "Bearer " + String(SUPABASE_KEY));
   http.addHeader("Content-Type", "application/json");
