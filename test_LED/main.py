@@ -126,3 +126,47 @@ def save_to_db():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# ===== 전체 조회 =====
+@app.get("/scans")
+def get_scans():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM scans ORDER BY id DESC")
+    rows = c.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "timestamp": r[1],
+            "member": r[2],
+            "part": r[3],
+            "moisture": r[4],
+            "oil": r[5],
+            "white_img": r[6],
+            "uv_img": r[7],
+        }
+        for r in rows
+    ]
+
+# ===== 팀원별 조회 =====
+@app.get("/scans/{member}")
+def get_scans_by_member(member: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM scans WHERE member=? ORDER BY id DESC", (member,))
+    rows = c.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "timestamp": r[1],
+            "member": r[2],
+            "part": r[3],
+            "moisture": r[4],
+            "oil": r[5],
+            "white_img": r[6],
+            "uv_img": r[7],
+        }
+        for r in rows
+    ]
