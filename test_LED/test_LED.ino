@@ -58,7 +58,7 @@ void loop() {
       Serial.println("Long press - shutting down...");
       digitalWrite(PIN_LED_WHITE, LOW);
       digitalWrite(PIN_LED_UV, LOW);
-      esp_deep_sleep_start();
+      // esp_deep_sleep_start();
     }
   } else if(sw == HIGH && lastSwitchState == LOW){
     if(!holdProcessed && millis() - switchHoldStart < 5000
