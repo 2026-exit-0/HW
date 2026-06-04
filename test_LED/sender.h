@@ -2,7 +2,7 @@
 #define SENDER_H
 
 #include <HTTPClient.h>
-#include <base64.h>
+#include <WiFiClientSecure.h>
 
 #define SUPABASE_URL "https://roghtpxrhxkicleukrfz.supabase.co"
 #define SUPABASE_KEY "sb_publishable_i6hDxJVq5ikMLhcVz2KioA_S1f-tQEn"
@@ -10,11 +10,13 @@
 String uploadImage(uint8_t* data, size_t len, String filename) {
   if (!data || len == 0) return "";
 
+  WiFiClientSecure client;
+  client.setInsecure();
+
   HTTPClient http;
   String url = String(SUPABASE_URL) + "/storage/v1/object/images/" + filename;
 
-  http.begin(url);
-  http.setInsecure(); // SSL 인증서 검증 생략
+  http.begin(client, url);
   http.addHeader("Authorization", "Bearer " + String(SUPABASE_KEY));
   http.addHeader("Content-Type", "image/jpeg");
 
@@ -41,9 +43,11 @@ void sendDataToSupabase(float moisture, float oil,
     selectedMember + "_" + selectedPart + "_" + ts + "_uv.jpg");
 
   // DB 저장
+  WiFiClientSecure client;
+  client.setInsecure();
+
   HTTPClient http;
-  http.begin(String(SUPABASE_URL) + "/rest/v1/scans");
-  http.setInsecure(); // SSL 인증서 검증 생략
+  http.begin(client, String(SUPABASE_URL) + "/rest/v1/scans");
   http.addHeader("apikey", SUPABASE_KEY);
   http.addHeader("Authorization", "Bearer " + String(SUPABASE_KEY));
   http.addHeader("Content-Type", "application/json");
