@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from supabase import create_client
 import base64
 from datetime import datetime
@@ -62,6 +62,21 @@ def get_scans():
 def get_scans_by_member(member: str):
     res = supabase.table("scans").select("*").eq("member", member).order("id", desc=True).execute()
     return res.data
+
+@app.get("/view/{scan_id}", response_class=HTMLResponse)
+def view_scan(scan_id: int):
+    res = supabase.table("scans").select("*").eq("id", scan_id).execute()
+    if not res.data:
+        return "Not found"
+    d = res.data[0]
+    return f"""
+    <html><body>
+    <h2>{d['member']} / {d['part']}</h2>
+    <p>수분: {d['moisture']} / 유분: {d['oil']}</p>
+    <img src="data:image/jpeg;base64,{d['white_img']}" width="400">
+    <img src="data:image/jpeg;base64,{d['uv_img']}" width="400">
+    </body></html>
+    """
 
 if __name__ == "__main__":
     import uvicorn
