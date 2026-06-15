@@ -5,8 +5,8 @@
 #include "Adafruit_VEML7700.h"
 
 #define FDC2112_ADDR 0x2A
-#define BASELINE 7     // 테스트 수치 (실제 확인 후 수정 필요)
-#define MIN_VAL  2     // 테스트 수치 (실제 확인 후 수정 필요)
+#define BASELINE 30    // 테스트 후 조정
+#define MIN_VAL  10    // 테스트 후 조정
 
 // 센서 실시간 변수
 uint16_t currentRaw = 7;
