@@ -111,7 +111,13 @@ void captureAndStore(uint8_t** dest, size_t* destLen) {
   }
   if (!cameraReady) return;
 
+  // 이전 프레임 버퍼 비우기 (캐시 제거)
   camera_fb_t *fb = esp_camera_fb_get();
+  if (fb) esp_camera_fb_return(fb);
+  delay(100);
+
+  // 새 프레임 캡처
+  fb = esp_camera_fb_get();
   if (!fb) return;
 
   *dest = (uint8_t*)malloc(fb->len);
@@ -228,7 +234,7 @@ void processScan() {
       }
 
       // 캡처 완료 확인 후 DONE
-      if (elapsed > 1500 && uvCaptureLen > 0) {
+      if (elapsed > 1500) {
         digitalWrite(PIN_LED_UV, LOW);
         digitalWrite(PIN_LED_WHITE, LOW);
         scanState = DONE;

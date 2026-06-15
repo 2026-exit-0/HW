@@ -1,8 +1,8 @@
 #include <Wire.h>
 #include <WiFi.h>
 
-const char* ap_ssid = "DAMDA_SKIN";
-const char* ap_password = "12345678";
+const char* ssid = "chimin";
+const char* password = "iiii0070";
 
 #define PIN_LED_WHITE 13
 #define PIN_LED_UV 12
@@ -35,8 +35,12 @@ void setup() {
   Serial.println("FDC2112 init done");
   initVEML7700();
 
-  WiFi.softAP(ap_ssid, ap_password);
-  Serial.println("AP Mode IP: " + WiFi.softAPIP().toString());
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("Connected! IP: " + WiFi.localIP().toString());
 
   initWebServer();
 
@@ -91,14 +95,16 @@ void loop() {
     sentTime = millis();
   }
 
-  if(scanState == DONE && needSend && millis() - sentTime > 3000){
+if(scanState == DONE && needSend && millis() - sentTime > 3000){
     Serial.println("Sending data to server...");
-    sendDataToSupabase(avgMoisture, avgReflectedLux,
+    int moisturePct = calcMoisturePct((uint16_t)avgMoisture);
+    int oilPct = calcOilPct(avgReflectedLux);
+    sendDataToSupabase(moisturePct, oilPct,
                        whiteCaptureData, whiteCaptureLen,
                        uvCaptureData, uvCaptureLen);
-    needSend = false;
-    scanState = IDLE;
-  }
+    needSend = false;      
+    scanState = IDLE;      
+  }                        
 
   if(scanState == IDLE){
     digitalWrite(PIN_LED_WHITE, LOW);
