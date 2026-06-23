@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from supabase import create_client
-import base64
 from datetime import datetime
 
 app = FastAPI()
@@ -9,6 +8,8 @@ app = FastAPI()
 SUPABASE_URL = "https://roghtpxrhxkicleukrfz.supabase.co"
 SUPABASE_KEY = "sb_publishable_i6hDxJVq5ikMLhcVz2KioA_S1f-tQEn"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+BUCKET_NAME = "scan-images"
 
 pending = {}
 
@@ -26,31 +27,54 @@ async def receive_sensor(request: Request):
 @app.post("/image/white")
 async def receive_white(request: Request):
     data = await request.body()
-    b64 = base64.b64encode(data).decode("utf-8")
-    pending["white_img"] = b64
+    pending["white_img_bytes"] = data
     print("✅ white 이미지 수신")
     return JSONResponse({"status": "ok"})
 
 @app.post("/image/uv")
 async def receive_uv(request: Request):
     data = await request.body()
-    b64 = base64.b64encode(data).decode("utf-8")
-    pending["uv_img"] = b64
+    pending["uv_img_bytes"] = data
     print("✅ uv 이미지 수신")
     save_to_supabase()
     return JSONResponse({"status": "ok"})
 
+def upload_image(image_bytes, filename):
+    supabase.storage.from_(BUCKET_NAME).upload(
+        filename,
+        image_bytes,
+        {"content-type": "image/jpeg"}
+    )
+    return supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+
 def save_to_supabase():
+    timestamp = pending.get("timestamp")
+    member = pending.get("member")
+    part = pending.get("part")
+
+    white_url = None
+    uv_url = None
+
+    if "white_img_bytes" in pending:
+        white_filename = f"{timestamp}_{member}_{part}_white.jpg"
+        white_url = upload_image(pending["white_img_bytes"], white_filename)
+        print("✅ white 이미지 Storage 업로드 완료")
+
+    if "uv_img_bytes" in pending:
+        uv_filename = f"{timestamp}_{member}_{part}_uv.jpg"
+        uv_url = upload_image(pending["uv_img_bytes"], uv_filename)
+        print("✅ uv 이미지 Storage 업로드 완료")
+
     supabase.table("scans").insert({
-        "timestamp":  pending.get("timestamp"),
-        "member":     pending.get("member"),
-        "part":       pending.get("part"),
-        "moisture":   pending.get("moisture"),
-        "oil":        pending.get("oil"),
-        "white_img":  pending.get("white_img"),
-        "uv_img":     pending.get("uv_img"),
+        "timestamp":   timestamp,
+        "member":      member,
+        "part":        part,
+        "moisture":    pending.get("moisture"),
+        "oil":         pending.get("oil"),
+        "white_img":   white_url,
+        "uv_img":      uv_url,
     }).execute()
-    print(f"✅ Supabase 저장 완료: {pending.get('member')}/{pending.get('part')}")
+    print(f"✅ Supabase 저장 완료: {member}/{part}")
     pending.clear()
 
 @app.get("/scans")
@@ -73,8 +97,8 @@ def view_scan(scan_id: int):
     <html><body>
     <h2>{d['member']} / {d['part']}</h2>
     <p>수분: {d['moisture']} / 유분: {d['oil']}</p>
-    <img src="data:image/jpeg;base64,{d['white_img']}" width="400">
-    <img src="data:image/jpeg;base64,{d['uv_img']}" width="400">
+    <img src="{d['white_img']}" width="400">
+    <img src="{d['uv_img']}" width="400">
     </body></html>
     """
 
