@@ -49,6 +49,15 @@ void setup() {
 
   switchHoldStart = millis();
   lastSwitchState = digitalRead(PIN_SWITCH);
+
+  
+  Serial.println("I2C Scan:");
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("  Found: 0x%02X\n", addr);
+    }
+  }
 }
 
 void loop() {

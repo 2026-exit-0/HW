@@ -5,8 +5,8 @@
 #include "Adafruit_VEML7700.h"
 
 #define FDC2112_ADDR 0x2A
-#define BASELINE 30    // 테스트 후 조정
-#define MIN_VAL  10    // 테스트 후 조정
+#define BASELINE 112  // 아무것도 안 댔을 때
+#define MIN_VAL  1    // 가장 촉촉할 때
 
 // 센서 실시간 변수
 uint16_t currentRaw = 7;
@@ -60,8 +60,14 @@ uint16_t readRegister(uint8_t reg) {
   Wire.beginTransmission(FDC2112_ADDR);
   Wire.write(reg);
   Wire.endTransmission(false);
-  Wire.requestFrom(FDC2112_ADDR, 2);
-  return (Wire.read() << 8) | Wire.read();
+  Wire.requestFrom(FDC2112_ADDR, 4);  // 2 → 4바이트로 변경
+  uint32_t val = 0;
+  val |= (uint32_t)Wire.read() << 24;
+  val |= (uint32_t)Wire.read() << 16;
+  val |= (uint32_t)Wire.read() << 8;
+  val |= Wire.read();
+  Serial.printf("  4byte raw: %u\n", val);
+  return (uint16_t)(val >> 12);  // 상위 16비트 사용
 }
 
 void initFDC2112() {
@@ -75,10 +81,8 @@ void initFDC2112() {
 }
 
 uint16_t readMoisture() {
-  uint16_t val = readRegister(0x00);
-  return val & 0x0FFF;
+  return readRegister(0x00);
 }
-
 // ===== VEML7700 조도 센서 =====
 
 void initVEML7700() {
