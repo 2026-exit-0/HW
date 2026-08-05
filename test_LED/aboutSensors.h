@@ -5,8 +5,8 @@
 #include "Adafruit_VEML7700.h"
 
 #define FDC2112_ADDR 0x2A
-#define BASELINE 112  // 아무것도 안 댔을 때
-#define MIN_VAL  1    // 가장 촉촉할 때
+#define BASELINE 70  // 아무것도 안 댔을 때
+#define MIN_VAL  500  // 가장 촉촉할 때
 
 // 센서 실시간 변수
 uint16_t currentRaw = 7;
@@ -43,6 +43,8 @@ uint8_t* whiteCaptureData = NULL;
 size_t whiteCaptureLen = 0;
 uint8_t* uvCaptureData = NULL;
 size_t uvCaptureLen = 0;
+bool whiteCaptureStarted = false; 
+bool uvCaptureStarted = false;  
 
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
 
@@ -115,10 +117,11 @@ void captureAndStore(uint8_t** dest, size_t* destLen) {
   }
   if (!cameraReady) return;
 
-  // 이전 프레임 버퍼 비우기 (캐시 제거)
+  // 이전 프레임 버퍼 2개 버리기
   camera_fb_t *fb = esp_camera_fb_get();
   if (fb) esp_camera_fb_return(fb);
-  delay(100);
+  fb = esp_camera_fb_get();
+  if (fb) esp_camera_fb_return(fb);
 
   // 새 프레임 캡처
   fb = esp_camera_fb_get();
@@ -131,7 +134,6 @@ void captureAndStore(uint8_t** dest, size_t* destLen) {
   }
   esp_camera_fb_return(fb);
 }
-
 // ===== 스캔 시작 =====
 
 void startScan() {
@@ -165,6 +167,9 @@ void startScan() {
   sumWhite = 0;
   sumALS = 0;
   Serial.println("Scan started: AMBIENT");
+
+  whiteCaptureStarted = false;
+  uvCaptureStarted = false;
 }
 
 // ===== 스캔 루프 처리 =====
@@ -207,11 +212,12 @@ void processScan() {
       }
 
       // 2초에 캡처
-      if (elapsed > 2000 && whiteCaptureLen == 0) {
+      if (elapsed > 2000 && whiteCaptureLen == 0 && !whiteCaptureStarted) {
+        whiteCaptureStarted = true;
         captureAndStore(&whiteCaptureData, &whiteCaptureLen);
         Serial.println("White capture done");
       }
-
+    
       // 3초 후 UV로 전환
       if (elapsed > 3000) {
         digitalWrite(PIN_LED_WHITE, LOW);
@@ -232,7 +238,8 @@ void processScan() {
       digitalWrite(PIN_LED_WHITE, LOW);
 
       // 0.5초에 캡처
-      if (elapsed > 1000 && uvCaptureLen == 0) {
+      if (elapsed > 1000 && uvCaptureLen == 0 && !uvCaptureStarted) {
+        uvCaptureStarted = true;
         captureAndStore(&uvCaptureData, &uvCaptureLen);
         Serial.println("UV capture done");
       }

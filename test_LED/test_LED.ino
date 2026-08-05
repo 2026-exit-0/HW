@@ -1,8 +1,8 @@
 #include <Wire.h>
 #include <WiFi.h>
 
-const char* ssid = "chimin";
-const char* password = "iiii0070";
+const char* ssid = "seoseo";
+const char* password = "111123456";
 
 #define PIN_LED_WHITE 13
 #define PIN_LED_UV 12
@@ -118,5 +118,24 @@ if(scanState == DONE && needSend && millis() - sentTime > 3000){
   if(scanState == IDLE){
     digitalWrite(PIN_LED_WHITE, LOW);
     digitalWrite(PIN_LED_UV, LOW);
+  }
+
+  if (Serial.available()) {
+    Serial.read();
+  
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb) {
+      // 선명도 계산
+      long sum = 0;
+      for (int i = 0; i < fb->len; i++) sum += fb->buf[i];
+      long mean = sum / fb->len;
+      long sumSq = 0;
+      for (int i = 0; i < fb->len; i++) {
+        long diff = fb->buf[i] - mean;
+        sumSq += diff * diff;
+      }
+      Serial.printf("선명도 점수: %ld\n", sumSq / fb->len);
+      esp_camera_fb_return(fb);
+    }
   }
 }

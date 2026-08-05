@@ -4,7 +4,7 @@
 #include <HTTPClient.h>
 
 // 개인 노트북 IP (DAMDA_SKIN 연결 시 192.168.4.2)
-#define SERVER_IP "172.20.10.12"
+#define SERVER_IP "172.20.10.10"
 #define SERVER_PORT 8000
 
 void sendDataToSupabase(float moisture, float oil,

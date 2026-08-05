@@ -6,8 +6,8 @@
 // ===== 수분 분석 =====
 
 int calcMoisturePct(uint16_t raw) {
-  if (raw >= BASELINE) return 0;
-  if (raw <= MIN_VAL) return 100;
+  if (raw <= BASELINE) return 0;
+  if (raw >= MIN_VAL) return 100;
   return map(raw, BASELINE, MIN_VAL, 0, 100);
 }
 

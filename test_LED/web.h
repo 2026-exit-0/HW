@@ -141,6 +141,27 @@ void initWebServer(){
   server.on("/", handleRoot);
   server.on("/scan", handleScan);
   server.on("/status", handleStatus);
+
+  server.on("/stream", HTTP_GET, []() { // 카메라 초점 조절 테스트용
+    WiFiClient client = server.client();
+    
+    String response = "HTTP/1.1 200 OK\r\n";
+    response += "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
+    client.print(response);
+
+    while (client.connected()) {
+      camera_fb_t *fb = esp_camera_fb_get();
+      if (!fb) continue;
+
+      client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
+      client.write(fb->buf, fb->len);
+      client.print("\r\n");
+      esp_camera_fb_return(fb);
+      
+      delay(100);
+    }
+  });
+
   server.begin();
 }
 
