@@ -90,8 +90,8 @@ uint16_t readMoisture() {
 void initVEML7700() {
   if (veml.begin()) {
     vemlConnected = true;
-    veml.setGain(VEML7700_GAIN_1);
-    veml.setIntegrationTime(VEML7700_IT_100MS);
+    veml.setGain(VEML7700_GAIN_2);
+    veml.setIntegrationTime(VEML7700_IT_200MS);
     Serial.println("VEML7700 connected! (0x10)");
   } else {
     vemlConnected = false;
