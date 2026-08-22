@@ -8,6 +8,54 @@ WebServer server(80);
 String selectedMember = "M1";
 String selectedPart = "FOREHEAD";
 
+// ===== 스트리밍 관련 =====
+WiFiClient streamClient;
+bool isStreaming = false;
+TaskHandle_t streamTaskHandle = NULL;
+
+void streamTask(void* param) {
+  while (isStreaming && streamClient.connected()) {
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) {
+      delay(10);
+      continue;
+    }
+    streamClient.printf(
+      "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
+      fb->len
+    );
+    streamClient.write(fb->buf, fb->len);
+    streamClient.print("\r\n");
+    esp_camera_fb_return(fb);
+    delay(100);
+  }
+  isStreaming = false;
+  streamTaskHandle = NULL;
+  vTaskDelete(NULL);
+}
+
+void handleStream() {
+  // 기존 스트리밍 종료
+  if (isStreaming) {
+    isStreaming = false;
+    delay(200);
+  }
+
+  streamClient = server.client();
+  streamClient.print("HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nCache-Control: no-cache\r\n\r\n");
+
+  isStreaming = true;
+  xTaskCreatePinnedToCore(
+    streamTask,
+    "streamTask",
+    8192,
+    NULL,
+    1,
+    &streamTaskHandle,
+    0  // Core 0 (loop()는 Core 1)
+  );
+}
+
 void handleRoot() {
   String html = R"rawliteral(<!DOCTYPE html><html><head>
 <meta charset='UTF-8'>
@@ -28,7 +76,6 @@ h1{font-size:22px;color:#333;margin-bottom:24px}
 </style></head><body>
 
 <h1>🌿 담다 피부 분석</h1>
-
 <div class='card'>
   <div class='label'>팀원 선택</div>
   <div class='select-group' id='memberGroup'>
@@ -44,7 +91,7 @@ h1{font-size:22px;color:#333;margin-bottom:24px}
   <div class='label'>부위 선택</div>
   <div class='select-group' id='partGroup'>
     <button class='select-btn active' onclick='selectPart("FOREHEAD")'>이마</button>
-    <button class='select-btn' onclick='selectPart("GLABELLA")'>미간</button>
+    <button class='select-btn' onclick='selectPart("NOSE")'>코</button>
     <button class='select-btn' onclick='selectPart("L_EYE")'>눈가(좌)</button>
     <button class='select-btn' onclick='selectPart("R_EYE")'>눈가(우)</button>
     <button class='select-btn' onclick='selectPart("L_CHEEK")'>볼(좌)</button>
@@ -110,6 +157,9 @@ function pollStatus(){
 }
 
 void handleScan() {
+  isStreaming = false;
+  delay(200);
+
   String m = server.arg("member");
   String p = server.arg("part");
   if(m.length() > 0) selectedMember = m;
@@ -141,27 +191,7 @@ void initWebServer(){
   server.on("/", handleRoot);
   server.on("/scan", handleScan);
   server.on("/status", handleStatus);
-
-  server.on("/stream", HTTP_GET, []() { // 카메라 초점 조절 테스트용
-    WiFiClient client = server.client();
-    
-    String response = "HTTP/1.1 200 OK\r\n";
-    response += "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
-    client.print(response);
-
-    while (client.connected()) {
-      camera_fb_t *fb = esp_camera_fb_get();
-      if (!fb) continue;
-
-      client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
-      client.write(fb->buf, fb->len);
-      client.print("\r\n");
-      esp_camera_fb_return(fb);
-      
-      delay(100);
-    }
-  });
-
+  server.on("/stream", HTTP_GET, handleStream);
   server.begin();
 }
 

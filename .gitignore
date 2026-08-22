@@ -39,3 +39,6 @@ Thumbs.db
 # 로그 / 시리얼 캡처
 *.log
 serial_dump.txt
+
+scan_images/
+*.csv

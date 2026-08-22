@@ -62,14 +62,13 @@ uint16_t readRegister(uint8_t reg) {
   Wire.beginTransmission(FDC2112_ADDR);
   Wire.write(reg);
   Wire.endTransmission(false);
-  Wire.requestFrom(FDC2112_ADDR, 4);  // 2 → 4바이트로 변경
-  uint32_t val = 0;
-  val |= (uint32_t)Wire.read() << 24;
-  val |= (uint32_t)Wire.read() << 16;
-  val |= (uint32_t)Wire.read() << 8;
-  val |= Wire.read();
-  Serial.printf("  4byte raw: %u\n", val);
-  return (uint16_t)(val >> 12);  // 상위 16비트 사용
+  Wire.requestFrom(FDC2112_ADDR, 2);
+  uint8_t high = Wire.read();
+  uint8_t low = Wire.read();
+  uint16_t val = ((uint16_t)high << 8) | low;
+  val &= 0x0FFF;
+  Serial.printf("  raw: %u\n", val);
+  return val;
 }
 
 void initFDC2112() {
