@@ -27,6 +27,9 @@ float ambientLux = 0;      // 주변광 (LED 끈 상태)
 float reflectedLux = 0;    // 순수 반사광 (LED 켠 상태 - 주변광)
 float avgReflectedLux = 0; // 반사광 평균
 float sumReflectedLux = 0;
+float sumAmbientLux = 0;
+int ambientMeasureCount = 0;
+const int AMBIENT_SAMPLES = 2;
 
 // 스캔 상태
 enum ScanState { IDLE, AMBIENT, WHITE_LED, UV_LED, MEASURING, DONE, SENT };
@@ -43,8 +46,8 @@ uint8_t* whiteCaptureData = NULL;
 size_t whiteCaptureLen = 0;
 uint8_t* uvCaptureData = NULL;
 size_t uvCaptureLen = 0;
-bool whiteCaptureStarted = false; 
-bool uvCaptureStarted = false;  
+bool whiteCaptureStarted = false;
+bool uvCaptureStarted = false;
 
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
 
@@ -107,8 +110,6 @@ uint16_t readMoisture() {
   bool errAW = (raw >> 12) & 0x01;
   uint16_t data = raw & 0x0FFF;
 
-  Serial.printf("raw=0x%04X data=%u errWD=%d errAW=%d | STATUS=0x%04X DRDY=%d CH0_UNREAD=%d\n",
-                raw, data, errWD, errAW, status, drdy, ch0Unread);
   return data;
 }
 // ===== VEML7700 조도 센서 =====
@@ -117,7 +118,7 @@ void initVEML7700() {
   if (veml.begin()) {
     vemlConnected = true;
     veml.setGain(VEML7700_GAIN_2);
-    veml.setIntegrationTime(VEML7700_IT_200MS);
+    veml.setIntegrationTime(VEML7700_IT_400MS);  // 200MS → 400MS: 해상도 확보하면서 스캔 시간 절충
     Serial.println("VEML7700 connected! (0x10)");
   } else {
     vemlConnected = false;
@@ -184,6 +185,8 @@ void startScan() {
   ambientLux = 0;
   reflectedLux = 0;
   sumReflectedLux = 0;
+  sumAmbientLux = 0;
+  ambientMeasureCount = 0;
 
   scanState = AMBIENT;
   scanStartTime = millis();
@@ -207,13 +210,25 @@ void processScan() {
     case AMBIENT:
       digitalWrite(PIN_LED_WHITE, LOW);
       digitalWrite(PIN_LED_UV, LOW);
-      if (elapsed > 500) {
+
+      // 400ms 간격 AMBIENT_SAMPLES회 측정 후 평균 (1회 측정 노이즈 제거)
+      // +2를 곱해서 진입 직후 1사이클(400ms)은 settling(안정화) 구간으로 버림
+      // — VEML7700은 연속 변환 방식이라 LED 전환 직후 첫 사이클엔 이전 상태 빛이 섞여 있을 수 있음
+      if (elapsed > (unsigned long)(ambientMeasureCount + 2) * 400
+          && ambientMeasureCount < AMBIENT_SAMPLES) {
         readVEML7700();
-        ambientLux = currentLux;
-        Serial.printf("Ambient lux: %.1f\n", ambientLux);
+        sumAmbientLux += currentLux;
+        ambientMeasureCount++;
+      }
+
+      if (ambientMeasureCount >= AMBIENT_SAMPLES) {
+        ambientLux = sumAmbientLux / AMBIENT_SAMPLES;
+        Serial.printf("Ambient lux (avg of %d): %.1f\n", AMBIENT_SAMPLES, ambientLux);
         scanState = WHITE_LED;
         scanStartTime = millis();
         measureCount = 0;
+        sumAmbientLux = 0;
+        ambientMeasureCount = 0;
         Serial.println("Scan: WHITE_LED");
       }
       break;
@@ -222,8 +237,10 @@ void processScan() {
       digitalWrite(PIN_LED_WHITE, HIGH);
       digitalWrite(PIN_LED_UV, LOW);
 
-      // 500ms 간격 6회 측정 (3초 동안)
-      if (elapsed > (unsigned long)(measureCount + 1) * 500 && measureCount < 6) {
+      // 400ms 간격 6회 측정 (IT_400MS에 맞춰 간격 확장)
+      // +2를 곱해서 WHITE_LED 켜진 직후 1사이클(400ms)은 settling 구간으로 버림
+      // — LED ON 직전에 진행 중이던 변환 사이클엔 AMBIENT 상태의 빛이 섞여 있을 수 있음
+      if (elapsed > (unsigned long)(measureCount + 2) * 400 && measureCount < 6) {
         currentRaw = readMoisture();
         readVEML7700();
         sumMoisture += currentRaw;
@@ -233,26 +250,31 @@ void processScan() {
         float reflected = currentLux - ambientLux;
         if (reflected < 0) reflected = 0;
         sumReflectedLux += reflected;
+
         measureCount++;
-        Serial.printf("Measure %d/6: raw=%d, lux=%.1f, reflected=%.1f\n", measureCount, currentRaw, currentLux, reflected);
+        Serial.printf("Measure %d/6: raw=%d, lux=%.1f, reflected=%.1f\n",
+                      measureCount, currentRaw, currentLux, reflected);
       }
 
-      // 2초에 캡처
+      // 캡처 타이밍: settling 1사이클 추가로 측정 구간이 늘어난 만큼(800~2800ms) 밀어서 조정
       if (elapsed > 2000 && whiteCaptureLen == 0 && !whiteCaptureStarted) {
         whiteCaptureStarted = true;
         captureAndStore(&whiteCaptureData, &whiteCaptureLen);
         Serial.println("White capture done");
       }
-    
-      // 3초 후 UV로 전환
-      if (elapsed > 3000) {
+
+      // 시간(2400ms)이 아니라 "6회 측정이 실제로 다 끝났는지"로 전환 판단
+      // (카메라 캡처가 루프를 오래 막으면 elapsed만 앞서가서 4회 만에 넘어가버리는 버그 수정)
+      // 단, 센서 이상 등으로 6회를 못 채우는 상황을 대비해 10초 타임아웃 시 있는 데이터로 강제 진행
+      if (measureCount >= 6 || elapsed > 10000) {
         digitalWrite(PIN_LED_WHITE, LOW);
-        // 결과 산출
-        avgMoisture = sumMoisture / 6.0;
-        avgLux = sumLux / 6.0;
-        avgWhite = sumWhite / 6.0;
-        avgALS = sumALS / 6.0;
-        avgReflectedLux = sumReflectedLux / 6.0;
+        // 결과 산출 (실제로 채워진 개수로 나눔, 0 나누기 방지)
+        int n = (measureCount > 0) ? measureCount : 1;
+        avgMoisture = sumMoisture / n;
+        avgLux = sumLux / n;
+        avgWhite = sumWhite / n;
+        avgALS = sumALS / n;
+        avgReflectedLux = sumReflectedLux / n;
         scanState = UV_LED;
         scanStartTime = millis();
         Serial.println("Scan: UV_LED");
