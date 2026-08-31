@@ -5,8 +5,8 @@
 #include "Adafruit_VEML7700.h"
 
 #define FDC2112_ADDR 0x2A
-#define BASELINE 70  // 아무것도 안 댔을 때
-#define MIN_VAL  500  // 가장 촉촉할 때
+#define BASELINE 130  // 아무것도 안 댔을 때
+#define MIN_VAL  60  // 가장 촉촉할 때
 
 // 센서 실시간 변수
 uint16_t currentRaw = 7;
@@ -51,38 +51,65 @@ Adafruit_VEML7700 veml = Adafruit_VEML7700();
 // ===== FDC2112 수분 센서 =====
 
 void writeRegister(uint8_t reg, uint16_t val) {
-  Wire.beginTransmission(FDC2112_ADDR);
-  Wire.write(reg);
-  Wire.write(val >> 8);
-  Wire.write(val & 0xFF);
-  Wire.endTransmission();
+  uint8_t err = 1;
+  for (int attempt = 0; attempt < 5 && err != 0; attempt++) {
+    Wire.beginTransmission(FDC2112_ADDR);
+    Wire.write(reg);
+    Wire.write(val >> 8);
+    Wire.write(val & 0xFF);
+    err = Wire.endTransmission();
+    if (err != 0) delay(5);  // 실패 시 잠깐 쉬고 재시도
+  }
+  Serial.printf("  writeReg 0x%02X <= 0x%04X (err=%d)\n", reg, val, err);
 }
 
-uint16_t readRegister(uint8_t reg) {
+uint16_t readRegister16(uint8_t reg) {
   Wire.beginTransmission(FDC2112_ADDR);
   Wire.write(reg);
   Wire.endTransmission(false);
-  Wire.requestFrom(FDC2112_ADDR, 2);
+  Wire.requestFrom(FDC2112_ADDR, 2);  // FDC2112는 레지스터가 16비트(2바이트)뿐
   uint8_t high = Wire.read();
   uint8_t low = Wire.read();
-  uint16_t val = ((uint16_t)high << 8) | low;
-  val &= 0x0FFF;
-  Serial.printf("  raw: %u\n", val);
-  return val;
+  return ((uint16_t)high << 8) | low;
 }
 
 void initFDC2112() {
-  writeRegister(0x1C, 0x020D);
-  writeRegister(0x08, 0x7FFF);
-  writeRegister(0x0C, 0x0064);
-  writeRegister(0x10, 0x047F);
+  writeRegister(0x1A, 0x1C01);  // Sleep mode 진입 (설정 변경 위해)
   delay(10);
-  writeRegister(0x1A, 0x1401);
+  writeRegister(0x1C, 0x0600);  // RESET_DEV — OUTPUT_GAIN=x16 (MikroE 공식값)
+  writeRegister(0x10, 0x0064);  // SETTLECOUNT_CH0 — MikroE 공식값
+  writeRegister(0x08, 0x010F);  // RCOUNT_CH0 — MikroE 공식값
+  writeRegister(0x0C, 0x0000);  // OFFSET_CH0 — 테스트: 0으로 낮춰서 클램프 가설 검증
+  writeRegister(0x14, 0x2002);  // CLOCK_DIVIDERS_CH0 — FREF_DIVIDER 1→2 감도 실험 (raw 대역을 넓혀보는 테스트)
+  writeRegister(0x1E, 0x7C00);  // DRIVE_CURRENT_CH0 — MikroE 공식값 (약 0.146mA)
+  writeRegister(0x19, 0xFFFF);  // ERROR_CONFIG — MikroE 공식값
+  writeRegister(0x1A, 0x0000);  // CONFIG — Active, Full-current mode (MikroE 공식값)
+  writeRegister(0x1B, 0x0007);  // MUX_CONFIG — MikroE 공식값
   delay(100);
+
+  // 상태 확인
+  uint16_t status = readRegister16(0x18);
+  Serial.printf("FDC2112 STATUS: 0x%04X\n", status);
+
+  // 칩 ID 확인 (I2C 읽기 신뢰성 검증용) — 정답: MANUFACTURER_ID=0x5449, DEVICE_ID=0x3054
+  uint16_t manuId = readRegister16(0x7E);
+  uint16_t devId = readRegister16(0x7F);
+  Serial.printf("MANUFACTURER_ID: 0x%04X (정답 0x5449)  DEVICE_ID: 0x%04X (정답 0x3054)\n", manuId, devId);
 }
 
 uint16_t readMoisture() {
-  return readRegister(0x00);
+  uint16_t status = readRegister16(0x18);
+  bool drdy = (status >> 6) & 0x01;
+  bool ch0Unread = (status >> 3) & 0x01;
+
+  uint16_t raw = readRegister16(0x00);
+  bool errWD = (raw >> 13) & 0x01;
+  bool errAW = (raw >> 12) & 0x01;
+  uint16_t data = raw & 0x0FFF;
+
+  Serial.printf("raw=0x%04X data=%u errWD=%d errAW=%d | STATUS=0x%04X DRDY=%d CH0_UNREAD=%d\n",
+                raw, data, errWD, errAW, status, drdy, ch0Unread);
+  return data;
 }
 // ===== VEML7700 조도 센서 =====
 

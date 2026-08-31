@@ -6,9 +6,9 @@
 // ===== 수분 분석 =====
 
 int calcMoisturePct(uint16_t raw) {
-  if (raw >= 7) return 0;
-  if (raw <= 0) return 100;
-  return map(raw, 7, 0, 0, 100);
+  if (raw >= BASELINE) return 0;
+  if (raw <= MIN_VAL) return 100;
+  return map(raw, BASELINE, MIN_VAL, 0, 100);
 }
 
 String getSkinType(int pct) {
