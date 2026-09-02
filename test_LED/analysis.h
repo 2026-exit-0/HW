@@ -41,8 +41,8 @@ int calcOilPct(float reflectedLux) {
   // 반사광이 높을수록 유분이 많음 (번들거림 = 반사 많음)
   // 측정값 기준: 이마(유분) ~54, 팔뚝(건조) ~85 였지만 주변광 제거 후 재캘리브 필요
   // 우선 0~50 lux 범위로 설정 (테스트 후 조정)
-  float minRef = 119.0;  // 아무것도 안 댄 상태 (기준)
-  float maxRef = 138.0;  // 유분 많음
+  float minRef = 80.0;  // 아무것도 안 댄 상태 (기준)
+  float maxRef = 95.0;  // 유분 많음
 
   if (reflectedLux <= minRef) return 0;
   if (reflectedLux >= maxRef) return 100;

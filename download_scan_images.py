@@ -26,7 +26,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 # ── 설정 ─────────────────────────────────────────────
-CSV_PATH   = "scans_rows.csv"          # CSV 파일 경로 (필요시 수정)
+CSV_PATH   = "scans_rows_2.csv"          # CSV 파일 경로 (필요시 수정)
 OUTPUT_DIR = Path("scan_images")       # 저장 폴더 이름 (필요시 수정)
 TIMEOUT    = 20                        # 이미지 요청 타임아웃(초)
 # ─────────────────────────────────────────────────────

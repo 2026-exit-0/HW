@@ -2,6 +2,11 @@
 #define CAM_INIT_H
 
 #include "esp_camera.h"
+#include "img_converters.h"
+
+// FRAMESIZE_SVGA 고정 해상도 (하이라이트 분석에서 디코딩 버퍼 크기 계산용)
+#define CAM_FRAME_WIDTH 800
+#define CAM_FRAME_HEIGHT 600
 
 // AI Thinker ESP32-CAM 핀 정의
 #define PWDN_GPIO_NUM  32

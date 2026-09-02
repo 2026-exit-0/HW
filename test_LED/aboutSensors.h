@@ -31,6 +31,16 @@ float sumAmbientLux = 0;
 int ambientMeasureCount = 0;
 const int AMBIENT_SAMPLES = 2;
 
+// 유분 측정용 (카메라 하이라이트 블록 분석)
+// 픽셀 단위로 세면 흩어진 잔반짝임이 오히려 카운트가 높게 나오는 문제가 있어서
+// 픽셀 하나하나가 아니라 블록(BLOCK_SIZE x BLOCK_SIZE) 평균으로 판정함
+// -> 실측해보니 유분이 많아도 하이라이트가 자잘한 점/가는 줄기 형태라, 20x20은 너무 커서
+//    진짜 신호까지 주변 어두운 픽셀에 묻혀버림(3케이스 다 ratio=0) -> 블록을 4x4로 축소
+#define HIGHLIGHT_THRESHOLD 200
+#define HIGHLIGHT_BLOCK_SIZE 4
+float avgHighlightRatio = 0;
+bool highlightAnalyzed = false;
+
 // 스캔 상태
 enum ScanState { IDLE, AMBIENT, WHITE_LED, UV_LED, MEASURING, DONE, SENT };
 ScanState scanState = IDLE;
@@ -161,6 +171,64 @@ void captureAndStore(uint8_t** dest, size_t* destLen) {
   }
   esp_camera_fb_return(fb);
 }
+
+// ===== 카메라 하이라이트 블록 분석 (유분) =====
+// 카메라 포맷을 런타임에 GRAYSCALE로 전환하는 방식은 esp32-camera 드라이버 자체의
+// 알려진 버그(포맷 전환 시 프레임 버퍼가 제대로 갱신/동기화 안 됨)로 매번 같은 값이 나와서 폐기.
+// 대신 이미 저장용으로 찍어둔 whiteCaptureData(JPEG)를 fmt2rgb888()로 소프트웨어 디코딩해서
+// 밝기를 계산 — 카메라를 다시 찍지 않아도 되고, 포맷 전환 버그 자체를 완전히 피함.
+void analyzeHighlights() {
+  if (whiteCaptureData == NULL || whiteCaptureLen == 0) {
+    Serial.println("Highlight analysis skipped: no white capture");
+    return;
+  }
+
+  size_t rgbLen = (size_t)CAM_FRAME_WIDTH * CAM_FRAME_HEIGHT * 3;
+  uint8_t* rgbBuf = (uint8_t*)malloc(rgbLen);
+  if (!rgbBuf) {
+    Serial.println("Highlight analysis: RGB888 malloc failed");
+    return;
+  }
+
+  if (!fmt2rgb888(whiteCaptureData, whiteCaptureLen, PIXFORMAT_JPEG, rgbBuf)) {
+    Serial.println("Highlight analysis: JPEG decode failed");
+    free(rgbBuf);
+    return;
+  }
+
+  int width = CAM_FRAME_WIDTH;
+  int height = CAM_FRAME_HEIGHT;
+  int blockCols = width / HIGHLIGHT_BLOCK_SIZE;
+  int blockRows = height / HIGHLIGHT_BLOCK_SIZE;
+  int highlightBlocks = 0;
+  int totalBlocks = blockCols * blockRows;
+  int maxBlockAvg = 0;  // 진단용: 이번 프레임에서 실제로 나온 블록 평균 최댓값 (threshold 보정 근거)
+
+  for (int by = 0; by < blockRows; by++) {
+    for (int bx = 0; bx < blockCols; bx++) {
+      long sum = 0;
+      int baseY = by * HIGHLIGHT_BLOCK_SIZE;
+      int baseX = bx * HIGHLIGHT_BLOCK_SIZE;
+      for (int y = 0; y < HIGHLIGHT_BLOCK_SIZE; y++) {
+        int rowBase = ((baseY + y) * width + baseX) * 3;
+        for (int x = 0; x < HIGHLIGHT_BLOCK_SIZE; x++) {
+          int idx = rowBase + x * 3;
+          sum += (rgbBuf[idx] + rgbBuf[idx + 1] + rgbBuf[idx + 2]) / 3;  // R,G,B 평균 = 밝기
+        }
+      }
+      int blockAvg = sum / (HIGHLIGHT_BLOCK_SIZE * HIGHLIGHT_BLOCK_SIZE);
+      if (blockAvg > maxBlockAvg) maxBlockAvg = blockAvg;
+      if (blockAvg > HIGHLIGHT_THRESHOLD) highlightBlocks++;
+    }
+  }
+
+  avgHighlightRatio = (totalBlocks > 0) ? (float)highlightBlocks / totalBlocks : 0;
+  Serial.printf("Highlight blocks: %d/%d, ratio=%.3f, maxBlockAvg=%d\n",
+                highlightBlocks, totalBlocks, avgHighlightRatio, maxBlockAvg);
+
+  free(rgbBuf);
+}
+
 // ===== 스캔 시작 =====
 
 void startScan() {
@@ -187,6 +255,8 @@ void startScan() {
   sumReflectedLux = 0;
   sumAmbientLux = 0;
   ambientMeasureCount = 0;
+  avgHighlightRatio = 0;
+  highlightAnalyzed = false;
 
   scanState = AMBIENT;
   scanStartTime = millis();
@@ -263,10 +333,19 @@ void processScan() {
         Serial.println("White capture done");
       }
 
-      // 시간(2400ms)이 아니라 "6회 측정이 실제로 다 끝났는지"로 전환 판단
-      // (카메라 캡처가 루프를 오래 막으면 elapsed만 앞서가서 4회 만에 넘어가버리는 버그 수정)
-      // 단, 센서 이상 등으로 6회를 못 채우는 상황을 대비해 10초 타임아웃 시 있는 데이터로 강제 진행
-      if (measureCount >= 6 || elapsed > 10000) {
+      // 저장용 JPEG 캡처(whiteCaptureData)가 끝나면 그걸 그대로 디코딩해서 분석
+      // (카메라를 다시 찍는 게 아니라 소프트웨어 디코딩이라 별도 settling 시간 불필요)
+      // (검증 단계: 아직 서버 전송/calcOilPct 반영 없이 로그로만 값 확인)
+      if (whiteCaptureLen > 0 && !highlightAnalyzed) {
+        highlightAnalyzed = true;
+        analyzeHighlights();
+      }
+
+      // 시간(2400ms)이 아니라 "6회 측정 + 하이라이트 분석까지 실제로 다 끝났는지"로 전환 판단
+      // (카메라 캡처가 루프를 오래 막으면 elapsed만 앞서가서 덜 끝난 채로 넘어가버리는 버그 방지
+      //  — 이전에 측정 횟수에서 겪었던 것과 같은 종류의 문제라 하이라이트 분석도 동일하게 가드함)
+      // 단, 센서 이상 등으로 못 채우는 상황을 대비해 10초 타임아웃 시 있는 데이터로 강제 진행
+      if ((measureCount >= 6 && highlightAnalyzed) || elapsed > 10000) {
         digitalWrite(PIN_LED_WHITE, LOW);
         // 결과 산출 (실제로 채워진 개수로 나눔, 0 나누기 방지)
         int n = (measureCount > 0) ? measureCount : 1;
@@ -297,7 +376,8 @@ void processScan() {
         digitalWrite(PIN_LED_UV, LOW);
         digitalWrite(PIN_LED_WHITE, LOW);
         scanState = DONE;
-        Serial.printf("Scan DONE: avgReflected=%.1f, avgMoisture=%.0f\n", avgReflectedLux, avgMoisture);
+        Serial.printf("Scan DONE: avgReflected=%.1f, avgMoisture=%.0f, avgHighlightRatio=%.3f\n",
+                      avgReflectedLux, avgMoisture, avgHighlightRatio);
       }
       break;
 
