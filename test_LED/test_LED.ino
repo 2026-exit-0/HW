@@ -1,8 +1,8 @@
 #include <Wire.h>
 #include <WiFi.h>
 
-const char* ssid = "chimin";
-const char* password = "iiii0070";
+const char* ssid = "seoseo";      // 아무 핫스팟/와이파이로 변경 가능
+const char* password = "111123456";
 
 #define PIN_LED_WHITE 13
 #define PIN_LED_UV 12
@@ -20,6 +20,21 @@ bool lastSwitchState = HIGH;
 bool holdProcessed = false;
 unsigned long sentTime = 0;
 bool needSend = false;
+
+// EC2 폴링용 타이머
+unsigned long lastPollTime = 0;
+
+void registerToEC2() {
+  HTTPClient http;
+  String url = "http://" + String(SERVER_IP) + ":" + String(SERVER_PORT) + "/register";
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  String localIP = WiFi.localIP().toString();
+  String body = "{\"device_id\":\"" + String(DEVICE_ID) + "\",\"ip\":\"" + localIP + "\"}";
+  int code = http.POST(body);
+  Serial.printf("IP 등록: %s → %d\n", localIP.c_str(), code);
+  http.end();
+}
 
 void setup() {
   Serial.begin(115200);
@@ -50,7 +65,6 @@ void setup() {
   switchHoldStart = millis();
   lastSwitchState = digitalRead(PIN_SWITCH);
 
-  
   Serial.println("I2C Scan:");
   for (uint8_t addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
@@ -85,6 +99,7 @@ void loop() {
         && millis() - switchHoldStart < 5000
         && millis() - lastSwitchPress > 300){
       if(scanState == IDLE || scanState == DONE){
+        notifyScanTrigger();   // 신규: React 프론트에 '스캔 중' 상태 전송
         startScan();
         lastSwitchPress = millis();
         Serial.println("Switch pressed - scan started");
@@ -95,6 +110,19 @@ void loop() {
 
   lastSwitchState = sw;
 
+  // EC2 스캔 명령 폴링 (3초마다, IDLE 상태일 때만)
+  if((scanState == IDLE || scanState == DONE) &&
+     millis() - lastPollTime > 3000) {
+    lastPollTime = millis();
+    String cmdMember, cmdPart;
+    if(checkScanCommand(cmdMember, cmdPart)) {
+      selectedMember = cmdMember;
+      selectedPart   = cmdPart;
+      startScan();
+      Serial.println("EC2 명령으로 스캔 시작: " + cmdMember + "/" + cmdPart);
+    }
+  }
+
   if(scanState != IDLE && scanState != DONE){
     processScan();
   }
@@ -104,16 +132,15 @@ void loop() {
     sentTime = millis();
   }
 
-if(scanState == DONE && needSend && millis() - sentTime > 3000){
-    Serial.println("Sending data to server...");
+  if(scanState == DONE && needSend && millis() - sentTime > 3000){
+    Serial.println("Sending sensor data to server...");
     int moisturePct = calcMoisturePct((uint16_t)avgMoisture);
     int oilPct = calcOilPct(avgReflectedLux);
-    sendDataToSupabase(moisturePct, oilPct,
-                       whiteCaptureData, whiteCaptureLen,
-                       uvCaptureData, uvCaptureLen);
-    needSend = false;      
-    scanState = IDLE;      
-  }                        
+    // 이미지는 백엔드가 /capture 로 직접 가져감 — 센서값만 전송
+    sendDataToSupabase(moisturePct, oilPct);
+    needSend = false;
+    scanState = IDLE;
+  }
 
   if(scanState == IDLE){
     digitalWrite(PIN_LED_WHITE, LOW);
@@ -122,10 +149,9 @@ if(scanState == DONE && needSend && millis() - sentTime > 3000){
 
   if (Serial.available()) {
     Serial.read();
-  
+
     camera_fb_t *fb = esp_camera_fb_get();
     if (fb) {
-      // 선명도 계산
       long sum = 0;
       for (int i = 0; i < fb->len; i++) sum += fb->buf[i];
       long mean = sum / fb->len;

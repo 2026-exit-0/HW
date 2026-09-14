@@ -13,20 +13,24 @@ WiFiClient streamClient;
 bool isStreaming = false;
 TaskHandle_t streamTaskHandle = NULL;
 
+// camMutex는 aboutSensors.h에 선언됨 (include 순서상 먼저 처리됨)
+
 void streamTask(void* param) {
   while (isStreaming && streamClient.connected()) {
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) {
-      delay(10);
-      continue;
+    // 뮤텍스를 잡아야만 카메라 프레임 접근 (캡처 중이면 자동으로 기다렸다가 재개)
+    if (camMutex && xSemaphoreTake(camMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+      camera_fb_t *fb = esp_camera_fb_get();
+      if (fb) {
+        streamClient.printf(
+          "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
+          fb->len
+        );
+        streamClient.write(fb->buf, fb->len);
+        streamClient.print("\r\n");
+        esp_camera_fb_return(fb);
+      }
+      xSemaphoreGive(camMutex);
     }
-    streamClient.printf(
-      "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
-      fb->len
-    );
-    streamClient.write(fb->buf, fb->len);
-    streamClient.print("\r\n");
-    esp_camera_fb_return(fb);
     delay(100);
   }
   isStreaming = false;
@@ -54,6 +58,30 @@ void handleStream() {
     &streamTaskHandle,
     0  // Core 0 (loop()는 Core 1)
   );
+}
+
+// ===== 백엔드 pull용 단일 프레임 캡처 =====
+void handleCapture() {
+  if (camMutex && xSemaphoreTake(camMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb) {
+      server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
+      esp_camera_fb_return(fb);
+    } else {
+      server.send(503, "text/plain", "Camera error");
+    }
+    xSemaphoreGive(camMutex);
+  } else {
+    server.send(503, "text/plain", "Camera busy");
+  }
+}
+
+// ===== 센서값 GET (백엔드 pull용) =====
+void handleSensorGet() {
+  int moisturePct = calcMoisturePct((uint16_t)avgMoisture);
+  int oilPct = calcOilPct(avgReflectedLux);
+  String json = "{\"moisture\":" + String(moisturePct) + ",\"oil\":" + String(oilPct) + "}";
+  server.send(200, "application/json", json);
 }
 
 void handleRoot() {
@@ -157,8 +185,7 @@ function pollStatus(){
 }
 
 void handleScan() {
-  isStreaming = false;
-  delay(200);
+  // 스트리밍을 끄지 않음 — 뮤텍스로 카메라 접근을 조율하므로 계속 실시간 표시됨
 
   String m = server.arg("member");
   String p = server.arg("part");
@@ -184,14 +211,18 @@ void handleStatus() {
     case DONE: state="done"; break;
     case SENT: state="done"; break;
   }
-  server.send(200, "application/json", "{\"state\":\""+state+"\"}");
+  // "status":"ok" 포함 — 백엔드의 스캐너 연결 확인(F.2, G.1)에 사용됨
+  server.send(200, "application/json", "{\"status\":\"ok\",\"state\":\""+state+"\"}");
 }
 
 void initWebServer(){
+  camMutex = xSemaphoreCreateMutex();  // 카메라 공유 뮤텍스 초기화
   server.on("/", handleRoot);
   server.on("/scan", handleScan);
   server.on("/status", handleStatus);
   server.on("/stream", HTTP_GET, handleStream);
+  server.on("/capture", HTTP_GET, handleCapture);   // 백엔드 pull용 정지 프레임
+  server.on("/sensor", HTTP_GET, handleSensorGet);  // 백엔드 pull용 센서값
   server.begin();
 }
 

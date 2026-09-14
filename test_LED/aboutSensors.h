@@ -3,6 +3,10 @@
 
 #include <Wire.h>
 #include "Adafruit_VEML7700.h"
+#include "freertos/semphr.h"
+
+// 카메라 공유 뮤텍스 (aboutSensors.h가 먼저 include되므로 여기서 선언)
+SemaphoreHandle_t camMutex = NULL;
 
 #define FDC2112_ADDR 0x2A
 #define BASELINE 130  // 아무것도 안 댔을 때
@@ -73,7 +77,7 @@ void writeRegister(uint8_t reg, uint16_t val) {
     err = Wire.endTransmission();
     if (err != 0) delay(5);  // 실패 시 잠깐 쉬고 재시도
   }
-  Serial.printf("  writeReg 0x%02X <= 0x%04X (err=%d)\n", reg, val, err);
+  // Serial.printf("  writeReg 0x%02X <= 0x%04X (err=%d)\n", reg, val, err);
 }
 
 uint16_t readRegister16(uint8_t reg) {
@@ -102,12 +106,12 @@ void initFDC2112() {
 
   // 상태 확인
   uint16_t status = readRegister16(0x18);
-  Serial.printf("FDC2112 STATUS: 0x%04X\n", status);
+  // Serial.printf("FDC2112 STATUS: 0x%04X\n", status);
 
   // 칩 ID 확인 (I2C 읽기 신뢰성 검증용) — 정답: MANUFACTURER_ID=0x5449, DEVICE_ID=0x3054
   uint16_t manuId = readRegister16(0x7E);
   uint16_t devId = readRegister16(0x7F);
-  Serial.printf("MANUFACTURER_ID: 0x%04X (정답 0x5449)  DEVICE_ID: 0x%04X (정답 0x3054)\n", manuId, devId);
+  // Serial.printf("MANUFACTURER_ID: 0x%04X (정답 0x5449)  DEVICE_ID: 0x%04X (정답 0x3054)\n", manuId, devId);
 }
 
 uint16_t readMoisture() {
@@ -154,7 +158,14 @@ void captureAndStore(uint8_t** dest, size_t* destLen) {
   }
   if (!cameraReady) return;
 
-  // 이전 프레임 버퍼 2개 버리기
+  // 뮤텍스를 잡아서 스트리밍 태스크가 카메라를 쓰지 못하게 막고 캡처
+  // (스트리밍은 뮤텍스를 기다렸다가 캡처 완료 후 자동으로 재개됨)
+  if (camMutex && xSemaphoreTake(camMutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+    Serial.println("captureAndStore: mutex timeout, skip");
+    return;
+  }
+
+  // 이전 프레임 버퍼 2개 버리기 (최신 프레임 확보)
   camera_fb_t *fb = esp_camera_fb_get();
   if (fb) esp_camera_fb_return(fb);
   fb = esp_camera_fb_get();
@@ -162,14 +173,16 @@ void captureAndStore(uint8_t** dest, size_t* destLen) {
 
   // 새 프레임 캡처
   fb = esp_camera_fb_get();
-  if (!fb) return;
-
-  *dest = (uint8_t*)malloc(fb->len);
-  if (*dest) {
-    memcpy(*dest, fb->buf, fb->len);
-    *destLen = fb->len;
+  if (fb) {
+    *dest = (uint8_t*)malloc(fb->len);
+    if (*dest) {
+      memcpy(*dest, fb->buf, fb->len);
+      *destLen = fb->len;
+    }
+    esp_camera_fb_return(fb);
   }
-  esp_camera_fb_return(fb);
+
+  if (camMutex) xSemaphoreGive(camMutex);  // 뮤텍스 반환 → 스트리밍 재개
 }
 
 // ===== 카메라 하이라이트 블록 분석 (유분) =====
