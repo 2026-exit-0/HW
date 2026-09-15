@@ -137,7 +137,7 @@ void loop() {
     int moisturePct = calcMoisturePct((uint16_t)avgMoisture);
     int oilPct = calcOilPct(avgReflectedLux);
     // 이미지는 백엔드가 /capture 로 직접 가져감 — 센서값만 전송
-    sendDataToSupabase(moisturePct, oilPct);
+    sendDataToSupabase(moisturePct, oilPct, whiteCaptureData, whiteCaptureLen, uvCaptureData, uvCaptureLen);
     needSend = false;
     scanState = IDLE;
   }

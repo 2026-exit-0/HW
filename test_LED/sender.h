@@ -10,7 +10,7 @@
 
 // 이미지는 백엔드가 /capture 로 직접 가져감 (pull 방식)
 // 여기서는 센서값(moisture, oil)만 EC2로 전송
-void sendDataToSupabase(float moisture, float oil) {
+void sendDataToSupabase(float moisture, float oil, uint8_t* whiteData, size_t whiteLen, uint8_t* uvData, size_t uvLen) {
 
   String base = "http://" + String(SERVER_IP) + ":" + String(SERVER_PORT);
   HTTPClient http;
@@ -24,6 +24,24 @@ void sendDataToSupabase(float moisture, float oil) {
   int code = http.POST(data);
   Serial.printf("Sensor POST: %d\n", code);
   http.end();
+
+  // white 이미지 전송
+  if(whiteData && whiteLen > 0){
+    http.begin(base + "/image/white");
+    http.addHeader("Content-Type", "image/jpeg");
+    code = http.POST(whiteData, whiteLen);
+    Serial.printf("White POST: %d\n", code);
+    http.end();
+  }
+
+  // uv 이미지 전송
+  if(uvData && uvLen > 0){
+    http.begin(base + "/image/uv");
+    http.addHeader("Content-Type", "image/jpeg");
+    code = http.POST(uvData, uvLen);
+    Serial.printf("UV POST: %d\n", code);
+    http.end();
+  }
 }
 
 // EC2에서 스캔 명령 폴링
